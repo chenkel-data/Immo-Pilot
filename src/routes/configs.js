@@ -11,6 +11,7 @@ import {
   deleteSearchConfig,
 } from '../db/database.js';
 import { getAllProviders, getProvider, inferFromUrl } from '../providers/registry.js';
+import { validateUrl as validateIs24Url } from '../providers/immoscout24/index.js';
 
 const router = Router();
 
@@ -66,6 +67,15 @@ router.post('/', asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'Scrape-URL ist erforderlich.' });
   }
 
+  // Validate IS24 URL against supported search categories
+  if (directUrl.includes('immobilienscout24.de')) {
+    try {
+      validateIs24Url(directUrl);
+    } catch (e) {
+      return res.status(400).json({ error: e.message });
+    }
+  }
+
   const extraParams = { directUrl };
   console.log(`[config] New config: ${name}`);
 
@@ -102,6 +112,14 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   if (req.body.directUrl !== undefined) {
     const directUrl = req.body.directUrl;
     data.extraParams = { directUrl };
+    // Validate IS24 URL against supported search categories
+    if (directUrl.includes('immobilienscout24.de')) {
+      try {
+        validateIs24Url(directUrl);
+      } catch (e) {
+        return res.status(400).json({ error: e.message });
+      }
+    }
 
     // Auto-infer listing type from new URL if not explicitly supplied
     if (req.body.listing_type === undefined && req.body.listingType === undefined) {
