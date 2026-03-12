@@ -25,7 +25,7 @@ export default function Header({ scraping, scrapeProgress, unseenCount, canScrap
             </svg>
           </div>
           <div>
-            <h1 className="header-title">ImmoPilot</h1>
+            <h1 className="header-title">Immo-Pilot</h1>
             <span className="header-subtitle">Die neue intelligente Art der Wohnungssuche</span>
           </div>
         </div>

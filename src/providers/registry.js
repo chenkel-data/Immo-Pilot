@@ -9,6 +9,7 @@
  */
 
 import * as kleinanzeigen from './kleinanzeigen/index.js';
+import * as immoscout24 from './immoscout24/index.js';
 
 const providers = new Map();
 
@@ -19,6 +20,7 @@ function register(provider) {
 // ── Registered Providers ──────────────────────────────────────────────────────
 
 register(kleinanzeigen);
+register(immoscout24);
 
 
 /**

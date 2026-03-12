@@ -141,6 +141,11 @@ function AgentForm({ providers, editingConfig, onSubmit, onCancel }) {
   const effectiveType = inferred?.type || formData.listingType;
   const effectiveProvider = inferred?.provider || formData.provider;
 
+  const isIs24Url = formData.directUrl.trim().includes('immobilienscout24.de/Suche/');
+  const urlError = isIs24Url && !inferred
+    ? 'Spezielle Wohnungstypen werden nicht unterstützt. Bitte verwende eine Standard-Suche (Wohnung/Haus mieten oder kaufen, Wohnen auf Zeit).'
+    : null;
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.directUrl.trim()) return;
@@ -175,7 +180,7 @@ function AgentForm({ providers, editingConfig, onSubmit, onCancel }) {
         <input
           className="agent-input"
           type="url"
-          placeholder="https://www.kleinanzeigen.de/…"
+          placeholder="https://www.kleinanzeigen.de/… oder https://www.immobilienscout24.de/Suche/…"
           value={formData.directUrl}
           onChange={(e) => {
             const directUrl = e.target.value;
@@ -189,6 +194,9 @@ function AgentForm({ providers, editingConfig, onSubmit, onCancel }) {
           required
         />
         <span className="agent-form-hint">Direkte Such-URL vom Anbieter einfügen</span>
+        {urlError && (
+          <span className="agent-form-url-error">{urlError}</span>
+        )}
         <div className="agent-form-detected">
           {inferred ? (
             <span className="agent-form-detected-ok">
@@ -227,7 +235,7 @@ function AgentForm({ providers, editingConfig, onSubmit, onCancel }) {
       </div>
 
       <div className="agent-form-actions">
-        <button type="submit" className="btn btn--primary btn--sm btn--full">
+        <button type="submit" className="btn btn--primary btn--sm btn--full" disabled={!!urlError}>
           {editingConfig ? 'Speichern' : 'Agent erstellen'}
         </button>
         <button type="button" className="btn btn--ghost btn--sm btn--full" onClick={onCancel}>

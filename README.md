@@ -1,8 +1,15 @@
-# ImmoPilot
+# Immo-Pilot
 
-Apartment hunting wastes a lot of time – mostly because the same listings keep appearing with every new search. ImmoPilot remembers what you've already seen or dismissed, and filters it out next time. Over time, the feed gets shorter and more targeted.
 
-Currently supported: **Kleinanzeigen** – more providers to come.
+### Your smart hub for apartment hunting — all portals, one place.
+
+Apartment hunting wastes a lot of time – mostly because the same listings keep appearing with every new search. Immo-Pilot remembers what you've already seen or dismissed, and filters it out next time. Over time, the feed gets shorter and more targeted.
+
+
+Immo-Pilot aggregates listings from multiple real estate platforms into a single, unified interface. Instead of jumping between portals and losing track of what you've already seen, Immo-Pilot continuously scrapes your configured sources, deduplicates results, and presents everything in one clean dashboard — so you never miss the perfect apartment again.
+
+
+Currently supported: **ImmobilienScout24** & **Kleinanzeigen** – more providers to come.
 
 ![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22.5-green?logo=node.js)
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)
@@ -13,9 +20,19 @@ Currently supported: **Kleinanzeigen** – more providers to come.
 
 ---
 
-![Screenshot](docs/ImmoPilot.png)
+![Screenshot](docs/Immo-Pilot.png)
 
 ---
+
+
+## Features
+
+- 🔍 **Search agents** – multiple agents, each with its own search URL from the provider and a page limit
+- 🚫 **Blacklist** – per click or globally via keywords
+- ❤️ **Favorites** – persisted even if the agent is deleted
+- 🔄 **Scraping** – manual, on startup, or via cron; with pagination and duplicate filtering
+- 🧩 **Provider system** – currently: Kleinanzeigen; more planned
+- 🗄️ **Local** – SQLite
 
 ## Quickstart
 
@@ -28,17 +45,6 @@ npm start
 ```
 
 → http://localhost:3000
-
----
-
-## Features
-
-- 🔍 **Search agents** – multiple agents, each with its own search URL from the provider and a page limit
-- 🚫 **Blacklist** – per click or globally via keywords
-- ❤️ **Favorites** – persisted even if the agent is deleted
-- 🔄 **Scraping** – manual, on startup, or via cron; with pagination and duplicate filtering
-- 🧩 **Provider system** – currently: Kleinanzeigen; more planned
-- 🗄️ **Local** – SQLite
 
 ---
 
