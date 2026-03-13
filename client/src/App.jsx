@@ -15,7 +15,7 @@ import { useToast } from './hooks/useToast.js';
 import { useSearchConfigs } from './hooks/useSearchConfigs.js';
 import { parseNum } from './utils/formatting.js';
 import { api } from './api.js';
-import { TABS, ITEMS_PER_PAGE, LISTING_TYPE_LABELS, LISTING_TYPE_COLORS, PROVIDER_COLORS } from './constants.js';
+import { TABS, ITEMS_PER_PAGE, LISTING_TYPE_LABELS, LISTING_TYPE_COLORS, PROVIDER_COLORS, PROVIDER_LABELS } from './constants.js';
 
 const FILTERS_STORAGE_KEY = 'immo.filters.v1';
 const EMPTY_STATS = { total: 0, unseen: 0, favorites: 0, blacklisted: 0 };
@@ -38,6 +38,7 @@ function readPersistedFilters() {
   const defaults = {
     searchQuery: '',
     listingTypeFilter: '',
+    providerFilter: '',
     publisherFilter: '',
     minPrice: '',
     maxPrice: '',
@@ -103,6 +104,7 @@ export default function App() {
   const [page, setPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState(persistedFilters.searchQuery);
   const [listingTypeFilter, setListingTypeFilter] = useState(persistedFilters.listingTypeFilter);
+  const [providerFilter, setProviderFilter] = useState(persistedFilters.providerFilter);
   const [publisherFilter, setPublisherFilter] = useState(persistedFilters.publisherFilter);
   const [minPrice, setMinPrice] = useState(persistedFilters.minPrice);
   const [maxPrice, setMaxPrice] = useState(persistedFilters.maxPrice);
@@ -117,13 +119,14 @@ export default function App() {
     localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify({
       searchQuery,
       listingTypeFilter,
+      providerFilter,
       publisherFilter,
       minPrice,
       maxPrice,
       minSize,
       minRooms,
     }));
-  }, [searchQuery, listingTypeFilter, publisherFilter, minPrice, maxPrice, minSize, minRooms]);
+  }, [searchQuery, listingTypeFilter, providerFilter, publisherFilter, minPrice, maxPrice, minSize, minRooms]);
 
   useEffect(() => {
     const params = { include_blacklisted: true };
@@ -147,8 +150,10 @@ export default function App() {
     currentListingParamsRef.current = { include_blacklisted: true };
     setActiveTab(TABS.UNSEEN);
     setPage(1);
-    setSearchQuery(''); setMinPrice(''); setMaxPrice(''); setMinSize(''); setMinRooms(''); setListingTypeFilter('');
+    setSearchQuery(''); setMinPrice(''); setMaxPrice(''); setMinSize(''); setMinRooms(''); setListingTypeFilter(''); setProviderFilter(''); setPublisherFilter('');
   }, []);
+
+  const isProviderFilterActive = !activeConfigId && activeTab === TABS.ALL;
 
   const uiFilteredListings = useMemo(() => {
     let list = [...listings];
@@ -174,9 +179,10 @@ export default function App() {
   }, [listings, listingTypeFilter, publisherFilter, searchQuery, minPrice, maxPrice, minSize, minRooms, scrapeConfig]);
 
   const filteredBase = useMemo(() => {
-    if (!activeConfigId) return uiFilteredListings;
-    return uiFilteredListings.filter(l => l.search_config_id === activeConfigId);
-  }, [uiFilteredListings, activeConfigId]);
+    if (activeConfigId) return uiFilteredListings.filter(l => l.search_config_id === activeConfigId);
+    if (isProviderFilterActive && providerFilter) return uiFilteredListings.filter(l => l.provider === providerFilter);
+    return uiFilteredListings;
+  }, [uiFilteredListings, activeConfigId, isProviderFilterActive, providerFilter]);
 
   const filtered = useMemo(() => {
     let list = [...filteredBase];
@@ -244,7 +250,7 @@ export default function App() {
   }, []);
   const unseenCount = listings.filter(l => !l.is_seen && !l.is_blacklisted).length;
 
-  const resetFilters = () => { setSearchQuery(''); setMinPrice(''); setMaxPrice(''); setMinSize(''); setMinRooms(''); setListingTypeFilter(''); setPublisherFilter(''); };
+  const resetFilters = () => { setSearchQuery(''); setMinPrice(''); setMaxPrice(''); setMinSize(''); setMinRooms(''); setListingTypeFilter(''); setProviderFilter(''); setPublisherFilter(''); };
 
   const activeAgent = configs.find(c => c.id === activeConfigId);
   const activeAgentName = activeAgent ? activeAgent.name : null;
@@ -410,9 +416,13 @@ export default function App() {
               tabCounts={tabCounts}
               searchQuery={searchQuery} minPrice={minPrice} maxPrice={maxPrice} minSize={minSize} minRooms={minRooms}
               publisherFilter={publisherFilter}
+              providerFilter={providerFilter}
+              providers={providers}
+              showProviderFilter={isProviderFilterActive}
               onTabChange={setActiveTab} onListingTypeChange={setListingTypeFilter}
               onSearch={setSearchQuery} onMinPrice={setMinPrice} onMaxPrice={setMaxPrice} onMinSize={setMinSize} onMinRooms={setMinRooms}
               onPublisherFilter={setPublisherFilter}
+              onProviderFilter={setProviderFilter}
               onReset={resetFilters}
             />
 

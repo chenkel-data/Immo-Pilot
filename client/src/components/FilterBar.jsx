@@ -1,13 +1,13 @@
-import { TABS, LISTING_TYPE_LABELS } from '../constants.js';
+import { TABS, LISTING_TYPE_LABELS, PROVIDER_LABELS } from '../constants.js';
 
 export default function FilterBar({
   activeTab, stats, listingTypeFilter,
   searchQuery, minPrice, maxPrice, minSize, minRooms,
-  publisherFilter,
+  publisherFilter, providerFilter, providers, showProviderFilter,
   tabCounts,
-  onTabChange, onListingTypeChange, onSearch, onMinPrice, onMaxPrice, onMinSize, onMinRooms, onPublisherFilter, onReset,
+  onTabChange, onListingTypeChange, onSearch, onMinPrice, onMaxPrice, onMinSize, onMinRooms, onPublisherFilter, onProviderFilter, onReset,
 }) {
-  const hasFilters = searchQuery || minPrice || maxPrice || minSize || minRooms || publisherFilter;
+  const hasFilters = searchQuery || minPrice || maxPrice || minSize || minRooms || publisherFilter || (showProviderFilter && providerFilter);
 
   const tabs = [
     { id: TABS.ALL, label: 'Alle', count: stats.total, icon: (
@@ -50,6 +50,15 @@ export default function FilterBar({
         <select className="filter-select" value={listingTypeFilter} onChange={(e) => onListingTypeChange(e.target.value)}>
           {typeOptions.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
         </select>
+
+        {showProviderFilter && (
+          <select className="filter-select" value={providerFilter} onChange={(e) => onProviderFilter(e.target.value)}>
+            <option value="">Alle Quellen</option>
+            {(providers ?? []).map((p) => (
+              <option key={p.id} value={p.id}>{PROVIDER_LABELS[p.id] ?? p.name ?? p.id}</option>
+            ))}
+          </select>
+        )}
 
         <div className="search-wrap">
           <svg className="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" /></svg>
