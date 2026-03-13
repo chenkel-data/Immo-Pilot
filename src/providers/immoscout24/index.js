@@ -57,7 +57,7 @@ const PASSTHROUGH_KEYS = new Set([
   'geocoordinates', 'geocodes', 'sorting', 'fulltext',
   'apartmenttypes', 'floor', 'newbuilding', 'equipment',
   'petsallowedtypes', 'constructionyear', 'energyefficiencyclasses',
-  'exclusioncriteria', 'heatingtypes', 'haspromotion',
+  'exclusioncriteria', 'heatingtypes', 'haspromotion', 'startrentaldate',
 ]);
 
 // Sort codes: Web UI uses numeric IDs, the API uses named identifiers
