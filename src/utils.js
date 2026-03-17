@@ -32,6 +32,43 @@ export function now() {
   return new Date().toISOString();
 }
 
+export function normalizeAvailableFrom(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  if (/^(ab\s+)?sofort$/i.test(raw)) return 'sofort';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw; // already ISO
+
+  const m = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$/);
+  if (!m) return raw;
+
+  const year = m[3].length === 2 ? `20${m[3]}` : m[3];
+  const isoDate = `${year}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  const parsed = new Date(`${isoDate}T00:00:00Z`);
+  return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== isoDate ? raw : isoDate;
+}
+
+// ── Listing Field Patterns ───────────────────────────────────────────────────
+
+/**
+ * Shared regex patterns for detecting listing fields from raw strings.
+ * Used by all providers to identify price, size, and room count by value shape
+ */
+export const LISTING_PATTERNS = {
+  price: /[\d.,]+\s*€/,
+  size:  /[\d.,]+\s*m²/,
+  rooms: /[\d.,]+\s*Zi(?:mmer)?\.?/,  
+  date:  /^\d{2}\.\d{2}\.\d{2,4}$/,};
+
+/**
+ * @param {string[]} values  – flat array of candidate strings
+ * @param {string}   key     – one of 'price' | 'size' | 'rooms' | 'date'
+ * @returns {string|null}
+ */
+export function pickByPattern(values, key) {
+  const re = LISTING_PATTERNS[key];
+  return values.find((v) => re.test(String(v ?? ''))) ?? null;
+}
+
 function toGermanDateKey(value) {
   return String(value ?? '')
     .normalize('NFD')

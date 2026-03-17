@@ -84,6 +84,7 @@ const scrapeTime = now(); // uniform timestamp for all listings in this run
         link: listing.link,
         image: listing.image ?? null,
         listed_at: listing.listedAt ?? null,
+        available_from: listing.availableFrom ?? null,
         first_seen: scrapeTime,
         last_seen: scrapeTime,
       });

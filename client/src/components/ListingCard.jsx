@@ -1,5 +1,5 @@
 import { memo, useState, useCallback } from 'react';
-import { formatListingDate, isValidImageUrl } from '../utils/formatting.js';
+import { formatAvailableFrom, formatListingDate, isValidImageUrl } from '../utils/formatting.js';
 import { LISTING_TYPE_LABELS, LISTING_TYPE_COLORS, PROVIDER_LABELS, PROVIDER_COLORS } from '../constants.js';
 
 const HeartIcon = ({ filled }) => (
@@ -54,6 +54,7 @@ const ListingCard = memo(function ListingCard({ listing: l, onSeen, onFavorite, 
   const providerColors = PROVIDER_COLORS[l.provider] || { bg: 'rgba(255,255,255,.92)', text: '#1f2937', border: 'rgba(255,255,255,.75)' };
   const providerLabel = PROVIDER_LABELS[l.provider] || l.provider;
   const publishedLabel = formatListingDate(l.listed_at);
+  const availableFromLabel = formatAvailableFrom(l.available_from);
 
   return (
     <article className={`card ${isNew ? 'card--new' : ''} ${l.is_seen ? 'card--seen' : ''} ${l.is_blacklisted ? 'card--blacklisted' : ''}`}>
@@ -129,8 +130,16 @@ const ListingCard = memo(function ListingCard({ listing: l, onSeen, onFavorite, 
             <span className="card-date-label">Veröffentlicht am:</span>
             <span>{publishedLabel || 'unbekannt'}</span>
           </span>
+          {l.available_from && (
+            <span className="card-date">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="date-icon"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+              <span className="card-date-label">Einzug ab:</span>
+              <span>{availableFromLabel}</span>
+            </span>
+          )}
           {l.publisher && (
             <span className="card-date card-date--publisher" title={l.publisher}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="date-icon"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
               <span className="card-date-label">Inserent:</span>
               <span>{l.publisher}</span>
             </span>

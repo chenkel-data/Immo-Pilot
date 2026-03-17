@@ -97,11 +97,11 @@ export function useListings(showToast) {
     if (current?.is_blacklisted) {
       // Was blacklisted → now un-blacklisted + favorited
       setListings((prev) => prev.map((l) => (
-        l.id === id ? { ...l, is_blacklisted: 0, is_favorite: 1 } : l
+        l.id === id ? { ...l, is_blacklisted: 0, is_favorite: 1, favorited_at: updated?.favorited_at ?? new Date().toISOString() } : l
       )));
       showToast?.('Von Blacklist entfernt und als Favorit gespeichert', 'success');
     } else {
-      setListings((prev) => prev.map((l) => (l.id === id ? { ...l, is_favorite: updated.is_favorite } : l)));
+      setListings((prev) => prev.map((l) => (l.id === id ? { ...l, is_favorite: updated.is_favorite, favorited_at: updated.favorited_at ?? null } : l)));
     }
     await refreshStats();
   }, [listings, refreshStats, showToast]);
