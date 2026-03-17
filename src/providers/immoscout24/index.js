@@ -12,7 +12,10 @@
  *   - shorttermaccommodation → Wohnen auf Zeit
  */
 
-import { buildHash, parsePublishedDate, sleep } from '../../utils.js';
+import { buildHash, LISTING_PATTERNS, parsePublishedDate, pickByPattern, sleep } from '../../utils.js';
+
+// Set LOG_RAW_VS_PARSED=1 to enable per-listing debug output.
+const LOG_RAW_VS_PARSED = process.env.LOG_RAW_VS_PARSED === '1' || process.env.LOG_RAW_VS_PARSED === 'true';
 
 // ── Error Class ─────────────────────────────────────────────────────────────
 
@@ -188,9 +191,9 @@ const REQUEST_HEADERS = {
   'Accept':     'application/json',
 };
 
-async function requestPage(baseEndpoint, pageIdx) {
+async function requestPage(baseEndpoint, pageIdx, log = console.log) {
   const endpoint = `${baseEndpoint}&pagenumber=${pageIdx}`;
-  console.log(`[immoscout24] Seite ${pageIdx}: ${endpoint}`);
+  log(`[immoscout24] Seite ${pageIdx}: ${endpoint}`);
 
   const response = await fetch(endpoint, {
     method:  'POST',
@@ -207,21 +210,21 @@ async function requestPage(baseEndpoint, pageIdx) {
   return response.json();
 }
 
-// ── Result Normalization ────────────────────────────────────────────────────
-
 function transformResultItem(raw) {
   if (!raw?.id) return null;
 
-  const attrs = raw.attributes ?? [];
-  const link  = `https://www.immobilienscout24.de/expose/${raw.id}`;
+  const attrs     = raw.attributes ?? [];
+  const attrValues = attrs.map((a) => String(a.value ?? ''));
+  const link      = `https://www.immobilienscout24.de/expose/${raw.id}`;
 
   return {
     id:          buildHash('immoscout24', String(raw.id)),
     title:       raw.title ?? '',
-    price:       attrs[0]?.value ?? null,
-    size:        attrs[1]?.value ?? null,
-    rooms:       attrs[2]?.value ?? null,
-    address:     raw.address?.line ?? null,
+    price:         pickByPattern(attrValues, 'price'),
+    size:          pickByPattern(attrValues, 'size'),
+    rooms:         pickByPattern(attrValues, 'rooms'),
+    availableFrom: pickByPattern(attrValues, 'date'),
+    address:       raw.address?.line ?? null,
     description: null,
     publisher:   raw.isPrivate ? 'Privat' : 'Makler',
     link,
@@ -232,11 +235,49 @@ function transformResultItem(raw) {
   };
 }
 
+export function logRawVsParsed(raw, parsed, log = console.log) {
+  const attrs   = raw.attributes ?? [];
+  const sep     = '─'.repeat(60);
+  const hasWarn = attrs.some((a) => {
+    const v = String(a.value ?? '');
+    return !Object.values(LISTING_PATTERNS).some((re) => re.test(v));
+  });
+
+  log(`[immoscout24] ┌ ${sep}`);
+  log(`[immoscout24] │  ${raw.title || '(kein Titel)'}`);
+  log(`[immoscout24] │  Expose-ID  : ${raw.id}  →  https://www.immobilienscout24.de/expose/${raw.id}`);
+  log(`[immoscout24] │  Anbieter   : ${raw.isPrivate ? 'Privat' : 'Makler'}`);
+  log(`[immoscout24] │  Adresse    : ${raw.address?.line ?? '–'}`);
+  log(`[immoscout24] │  Veröff.    : ${raw.published ?? '–'}`);
+  log(`[immoscout24] │  ── Rohe Attribute → Erkennung ──────────────────────────`);
+  for (let i = 0; i < attrs.length; i++) {
+    const val     = String(attrs[i]?.value ?? '');
+    const matched = Object.entries(LISTING_PATTERNS)
+      .filter(([, re]) => re.test(val))
+      .map(([k]) => k);
+    const tag = matched.length ? matched.join('/') : '⚠  nicht erkannt';
+    log(`[immoscout24] │    attrs[${i}] = "${val}"  →  ${tag}`);
+  }
+  log(`[immoscout24] │  ── Parsed ───────────────────────────────────────────────`);
+  log(`[immoscout24] │    Preis   : ${parsed.price ?? '–'}`);
+  log(`[immoscout24] │    Größe   : ${parsed.size  ?? '–'}`);
+  log(`[immoscout24] │    Zimmer  : ${parsed.rooms ?? (hasWarn ? '– (⚠ fehlend)' : '–')}`);
+  log(`[immoscout24] │    Einzug  : ${parsed.availableFrom ?? '–'}`);
+  log(`[immoscout24] └ ${sep}`);
+}
+
+// Returns both normalized listings and the raw API items for debugging.
 function collectListingsFromResponse(payload) {
-  return (payload.resultListItems ?? [])
+  const rawItems = (payload.resultListItems ?? [])
     .filter((entry) => entry.type === 'EXPOSE_RESULT')
-    .map((entry) => transformResultItem(entry.item))
+    .map((entry) => entry.item)
     .filter(Boolean);
+  const listings = rawItems.map((raw) => {
+    const parsed = transformResultItem(raw);
+    if (parsed && LOG_RAW_VS_PARSED) logRawVsParsed(raw, parsed);
+    return parsed;
+  }).filter(Boolean);
+  return { listings, rawItems };
 }
 
 // ── Main Function: scrape() ─────────────────────────────────────────────────
@@ -250,46 +291,78 @@ function collectListingsFromResponse(payload) {
  * @returns {Promise<object[]>}    – Normalized listings
  */
 export async function scrape(inputUrl, maxPages = 10, opts = {}) {
-  const { signal, onProgress } = opts;
+  const { pages } = await scrapePages(inputUrl, maxPages, opts);
+  return pages.flatMap((page) => page.listings);
+}
+
+/**
+ * Scrapes listings from ImmobilienScout24 via the mobile API and keeps
+ * the results grouped by page for debugging and tests.
+ *
+ * @param {string} inputUrl
+ * @param {number} maxPages
+ * @param {{ signal?: AbortSignal, onProgress?: Function, log?: Function }} opts
+ * @returns {Promise<{ mobileUrl: string, hitCount: number|string, pageCount: number, targetPages: number, pages: Array<{ pageNum: number, listings: object[] }> }>}
+ */
+export async function scrapePages(inputUrl, maxPages = 10, opts = {}) {
+  const {
+    signal,
+    onProgress,
+    log = console.log,
+  } = opts;
 
   // Detect if already an API URL
   const isApiEndpoint = inputUrl.includes('api.mobile.immobilienscout24.de');
   const apiBase = isApiEndpoint ? inputUrl : toApiUrl(inputUrl);
 
   if (!isApiEndpoint) {
-    console.log(`[immoscout24] Web-URL konvertiert → ${apiBase}`);
+    log(`[immoscout24] Web-URL konvertiert → ${apiBase}`);
   }
 
-  const results = [];
-
-  if (signal?.aborted) return results;
+  if (signal?.aborted) {
+    return {
+      mobileUrl: apiBase,
+      hitCount: 0,
+      pageCount: 0,
+      targetPages: 0,
+      pages: [],
+    };
+  }
 
   // Fetch first page (contains paging metadata)
-  const firstPage  = await requestPage(apiBase, 1);
+  const firstPage  = await requestPage(apiBase, 1, log);
   const pageCount  = firstPage.numberOfPages ?? 1;
   const hitCount   = firstPage.totalResults  ?? '?';
   const targetPages = Math.min(maxPages, pageCount);
+  const pages = [];
 
-  console.log(`[immoscout24] Treffer: ${hitCount}  |  Seiten: ${pageCount}  |  Abruf: 1–${targetPages}`);
-
-  results.push(...collectListingsFromResponse(firstPage));
+  log(`[immoscout24] Treffer: ${hitCount}  |  Seiten: ${pageCount}  |  Abruf: 1–${targetPages}`);
+  pages.push({ pageNum: 1, ...collectListingsFromResponse(firstPage) });
   onProgress?.({ pageNum: 1, maxPages: targetPages });
 
   for (let p = 2; p <= targetPages; p++) {
     if (signal?.aborted) {
-      console.log(`[immoscout24] Abbruch nach Seite ${p - 1}`);
+      log(`[immoscout24] Abbruch nach Seite ${p - 1}`);
       break;
     }
 
     await sleep(600 + Math.random() * 600);
 
-    const pageData = await requestPage(apiBase, p);
-    results.push(...collectListingsFromResponse(pageData));
+    const pageData = await requestPage(apiBase, p, log);
+    pages.push({ pageNum: p, ...collectListingsFromResponse(pageData) });
     onProgress?.({ pageNum: p, maxPages: targetPages });
   }
 
-  console.log(`[immoscout24] ${results.length} Listings über ${Math.min(targetPages, results.length > 0 ? targetPages : 1)} Seite(n).`);
-  return results;
+  const results = pages.flatMap((p) => p.listings);
+  log(`[immoscout24] ${results.length} Listings über ${pages.length} Seite(n).`);
+
+  return {
+    mobileUrl: apiBase,
+    hitCount,
+    pageCount,
+    targetPages,
+    pages,
+  };
 }
 
 // ── Provider Exports ────────────────────────────────────────────────────────

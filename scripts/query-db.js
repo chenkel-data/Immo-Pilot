@@ -92,6 +92,7 @@ if (cmd === 'overview' || cmd === 'o') {
 } else if (cmd === 'listings' || cmd === 'l') {
   const rows = db.prepare(`
     SELECT id, title, price, size, rooms, publisher, address,
+           available_from,
            CASE WHEN is_seen=1 THEN '✓' ELSE '○' END AS seen,
            CASE WHEN is_favorite=1 THEN '⭐' ELSE '' END AS fav,
            first_seen
@@ -99,7 +100,7 @@ if (cmd === 'overview' || cmd === 'o') {
     ORDER BY first_seen DESC
   `).all().map((r) => ({ ...r, first_seen: fmt(r.first_seen) }));
   console.log(`\n🏠 Listings (${rows.length}):\n`);
-  table(rows, ['title', 'price', 'size', 'rooms', 'publisher', 'address', 'seen', 'fav', 'first_seen']);
+  table(rows, ['title', 'price', 'size', 'rooms', 'publisher', 'address', 'available_from', 'seen', 'fav', 'first_seen']);
   console.log('');
 
 } else if (cmd === 'all') {

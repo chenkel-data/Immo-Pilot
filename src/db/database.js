@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import { normalizeAvailableFrom } from '../utils.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_DIR    = path.join(__dirname, '..', '..', 'data');
@@ -95,6 +96,8 @@ safeAlter('ALTER TABLE search_configs DROP COLUMN radius');
 
 // listings blacklist timestamp
 safeAlter('ALTER TABLE listings ADD COLUMN blacklisted_at TEXT');
+safeAlter('ALTER TABLE listings ADD COLUMN available_from TEXT');
+safeAlter('ALTER TABLE listings ADD COLUMN favorited_at TEXT');
 
 // Index for fast link-based deduplication
 db.exec('CREATE INDEX IF NOT EXISTS idx_listings_link ON listings(link)');
@@ -118,6 +121,21 @@ db.exec('CREATE INDEX IF NOT EXISTS idx_listings_link ON listings(link)');
     if (upgraded !== row.image) { stmt.run(upgraded, row.id); count++; }
   }
   if (count > 0) console.log(`[db] ${count} image URL(s) upgraded to s-l1600.`);
+}
+
+// Normalize available_from values to ISO where possible
+{
+  const rows = db.prepare('SELECT id, available_from FROM listings WHERE available_from IS NOT NULL').all();
+  const stmt = db.prepare('UPDATE listings SET available_from = ? WHERE id = ?');
+  let count = 0;
+  for (const row of rows) {
+    const normalized = normalizeAvailableFrom(row.available_from);
+    if (normalized !== row.available_from) {
+      stmt.run(normalized, row.id);
+      count++;
+    }
+  }
+  if (count > 0) console.log(`[db] ${count} available_from value(s) normalized.`);
 }
 
 // ── Search Configs ──────────────────────────────────────────────────────────
@@ -177,7 +195,7 @@ export function blacklistListing(listingId) {
   const listing = getListingById(listingId);
   if (!listing) throw new Error('Listing nicht gefunden');
   db.prepare('INSERT OR IGNORE INTO blacklist (listing_id, url) VALUES (?, ?)').run(listingId, listing.link);
-  db.prepare("UPDATE listings SET is_blacklisted = 1, is_favorite = 0, blacklisted_at = datetime('now') WHERE id = ?").run(listingId);
+  db.prepare("UPDATE listings SET is_blacklisted = 1, is_favorite = 0, favorited_at = NULL, blacklisted_at = datetime('now') WHERE id = ?").run(listingId);
   return { ok: true, wasFavorite: listing.is_favorite === 1 };
 }
 
@@ -198,11 +216,11 @@ export function getBlacklistCount() {
 }
 
 export function clearAllFavorites() {
-  db.prepare('UPDATE listings SET is_favorite = 0 WHERE is_favorite = 1').run();
+  db.prepare('UPDATE listings SET is_favorite = 0, favorited_at = NULL WHERE is_favorite = 1').run();
 }
 
 export function clearFavoritesByConfig(searchConfigId) {
-  db.prepare('UPDATE listings SET is_favorite = 0 WHERE search_config_id = ? AND is_favorite = 1').run(searchConfigId);
+  db.prepare('UPDATE listings SET is_favorite = 0, favorited_at = NULL WHERE search_config_id = ? AND is_favorite = 1').run(searchConfigId);
 }
 
 export function clearAllBlacklist() {
@@ -232,6 +250,8 @@ export function getStats() {
 // ── Listings ─────────────────────────────────────────────────────────────────
 
 export function upsertListing(l) {
+  l.available_from = normalizeAvailableFrom(l.available_from);
+
   // Check URL blacklist
   if (l.link && isUrlBlacklisted(l.link)) {
     l.is_blacklisted = 1;
@@ -263,8 +283,8 @@ export function upsertListing(l) {
     }
   }
   db.prepare(`
-    INSERT INTO listings (id, source, provider, listing_type, search_config_id, title, price, size, rooms, address, description, publisher, link, image, is_blacklisted, listed_at, first_seen, last_seen)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO listings (id, source, provider, listing_type, search_config_id, title, price, size, rooms, address, description, publisher, link, image, is_blacklisted, listed_at, available_from, first_seen, last_seen)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       price           = excluded.price,
       size            = excluded.size,
@@ -274,6 +294,7 @@ export function upsertListing(l) {
       publisher       = COALESCE(excluded.publisher, publisher),
       image           = excluded.image,
       listed_at       = COALESCE(excluded.listed_at, listed_at),
+      available_from  = COALESCE(excluded.available_from, available_from),
       last_seen       = excluded.last_seen,
       search_config_id = COALESCE(search_config_id, excluded.search_config_id)
   `).run(
@@ -281,7 +302,7 @@ export function upsertListing(l) {
     l.search_config_id ?? null,
     l.title, l.price ?? null, l.size ?? null, l.rooms ?? null,
     l.address ?? null, l.description ?? null, l.publisher ?? null, l.link, l.image ?? null,
-    l.is_blacklisted ?? 0, l.listed_at ?? null, (carryFirstSeen && (!l.first_seen || carryFirstSeen < l.first_seen)) ? carryFirstSeen : l.first_seen, l.last_seen
+    l.is_blacklisted ?? 0, l.listed_at ?? null, l.available_from ?? null, (carryFirstSeen && (!l.first_seen || carryFirstSeen < l.first_seen)) ? carryFirstSeen : l.first_seen, l.last_seen
   );
 
   if (carrySeen || carryFav) {
@@ -311,9 +332,11 @@ export function toggleFavorite(id) {
   if (!listing) return null;
   if (listing.is_blacklisted) {
     db.prepare('DELETE FROM blacklist WHERE listing_id = ?').run(id);
-    db.prepare('UPDATE listings SET is_favorite = 1, is_blacklisted = 0 WHERE id = ?').run(id);
+    db.prepare("UPDATE listings SET is_favorite = 1, is_blacklisted = 0, favorited_at = datetime('now') WHERE id = ?").run(id);
+  } else if (listing.is_favorite) {
+    db.prepare('UPDATE listings SET is_favorite = 0, favorited_at = NULL WHERE id = ?').run(id);
   } else {
-    db.prepare('UPDATE listings SET is_favorite = CASE WHEN is_favorite = 1 THEN 0 ELSE 1 END WHERE id = ?').run(id);
+    db.prepare("UPDATE listings SET is_favorite = 1, favorited_at = datetime('now') WHERE id = ?").run(id);
   }
   return getListingById(id);
 }

@@ -1,77 +1,98 @@
 /**
  * Test script: ImmobilienScout24 Provider
  *
- * Uses the provider from src/providers/immoscout24/index.js directly.
+ * Uses the provider functions from src/providers/immoscout24/index.js.
  *
  * Usage:
- *   node scripts/test-immoscout.js "https://www.immobilienscout24.de/Suche/radius/wohnen-auf-zeit?..."
- *   or set the URL directly in TEST_URL below.
+ *   node scripts/test-immoscout.js [<url>] [--max-pages=<n>] [--md[=<path>]]
  */
 
-import { toApiUrl, scrape } from '../src/providers/immoscout24/index.js';
+import fs from 'fs/promises';
+import path from 'path';
+import { toApiUrl, scrapePages, logRawVsParsed } from '../src/providers/immoscout24/index.js';
 
 // ─── Konfiguration ──────────────────────────────────────────────────────────
-const MAX_PAGES = 1;
+const MAX_PAGES       = 1;
+const DEFAULT_MD_PATH = 'immoscout-test-output.md';
 
 const TEST_URL =
-  "https://www.immobilienscout24.de/Suche/radius/wohnen-auf-zeit?centerofsearchaddress=Heidelberg;;;;;;&geocoordinates=49.40191;8.6803;50.0&sorting=2&enteredFrom=result_list";
+  'https://www.immobilienscout24.de/Suche/radius/wohnen-auf-zeit?centerofsearchaddress=Heidelberg;;;;;;&price=600.0-1500.0&geocoordinates=49.40191;8.6803;100.0&sorting=2&enteredFrom=result_list';
 // ────────────────────────────────────────────────────────────────────────────
 
-const inputUrl = process.argv[2] ?? TEST_URL;
+// ── Args ─────────────────────────────────────────────────────────────────────
+const argv  = process.argv.slice(2);
+const flags = Object.fromEntries(
+  argv
+    .filter((a) => a.startsWith('--'))
+    .map((a) => { const [k, ...v] = a.slice(2).split('='); return [k, v.length ? v.join('=') : true]; }),
+);
+const inputUrl = argv.find((a) => !a.startsWith('--')) ?? TEST_URL;
+const maxPages = Number.isFinite(+flags['max-pages']) && +flags['max-pages'] > 0
+  ? +flags['max-pages']
+  : MAX_PAGES;
+const mdPath   = flags.md === true ? DEFAULT_MD_PATH : (flags.md || null);
 
-console.log('\n── Immoscout Web → Mobile API URL ────────────────────────────────');
-console.log('WEB:   ', inputUrl);
+// ── Logger ───────────────────────────────────────────────────────────────────
+const lines = [];
+function print(line = '') { console.log(line); lines.push(line); }
+
+// ── Main ─────────────────────────────────────────────────────────────────────
+print('\n── Immoscout Web → Mobile API URL ────────────────────────────────');
+print(`WEB:    ${inputUrl}`);
 
 try {
-  const mobileUrl = toApiUrl(inputUrl);
-  console.log('MOBILE:', mobileUrl);
+  const isApiUrl  = inputUrl.includes('api.mobile.immobilienscout24.de');
+  const mobileUrl = isApiUrl ? inputUrl : toApiUrl(inputUrl);
+  print(`MOBILE: ${mobileUrl}`);
 
-  // Parameter comparison
   const webParams    = Object.fromEntries(new URL(inputUrl).searchParams);
   const mobileParams = Object.fromEntries(new URL(mobileUrl).searchParams);
 
-  console.log('\n── Parameter-Mapping ─────────────────────────────────────────────');
-  console.log('Web Query-Params (gefiltert):');
+  print('\n── Parameter-Mapping ─────────────────────────────────────────────');
+  print('Web Query-Params (gefiltert):');
   for (const [k, v] of Object.entries(webParams)) {
-    if (k !== 'enteredFrom') console.log(`  ${k.padEnd(25)} → ${v}`);
+    if (k !== 'enteredFrom') print(`  ${k.padEnd(25)} → ${v}`);
   }
-  console.log('\nMobile Query-Params:');
+  print('\nMobile Query-Params:');
   for (const [k, v] of Object.entries(mobileParams)) {
-    console.log(`  ${k.padEnd(25)}   ${v}`);
+    print(`  ${k.padEnd(25)}   ${v}`);
   }
 
-  console.log('\n── Scraping läuft... ─────────────────────────────────────────────');
+  print('\n── Scraping läuft... ─────────────────────────────────────────────');
 
-  const listings = await scrape(inputUrl, MAX_PAGES);
+  const { hitCount, pageCount, targetPages, pages } = await scrapePages(inputUrl, maxPages, { log: () => {} });
+  print(`Treffer: ${hitCount}  |  Seiten gesamt: ${pageCount}  |  Abruf: 1–${targetPages}`);
 
-  console.log(`\n${'═'.repeat(66)}`);
-  console.log(`  ${listings.length} Inserate (MAX_PAGES=${MAX_PAGES})`);
-  console.log('═'.repeat(66));
+  let totalListings = 0;
+  for (const { pageNum, listings, rawItems } of pages) {
+    totalListings += listings.length;
+    print(`\n${'═'.repeat(66)}`);
+    print(`  Seite ${pageNum}/${targetPages}  •  ${listings.length} Inserate`);
+    print('═'.repeat(66));
 
-  for (const l of listings) {
-    console.log(`\n  ┌─ ${l.title || '(kein Titel)'}`);
-    console.log(`  │  ID       : ${l.id}`);
-    console.log(`  │  Anbieter : ${l.publisher ?? '–'}`);
-    console.log(`  │  Preis    : ${l.price ?? '–'}`);
-    console.log(`  │  Größe    : ${l.size ?? '–'}`);
-    console.log(`  │  Zimmer   : ${l.rooms ?? '–'}`);
-    console.log(`  │  Adresse  : ${l.address ?? '–'}`);
-    if (l.lat && l.lon) {
-      console.log(`  │  Koordin. : ${l.lat}, ${l.lon}  → https://maps.google.com/?q=${l.lat},${l.lon}`);
+    if (!listings.length) {
+      print('  (keine Inserate auf dieser Seite)');
+      continue;
     }
-    console.log(`  │  Veröff.  : ${l.listedAt ?? '–'}`);
-    if (l.image) console.log(`  │  Vorschau : ${l.image}`);
-    console.log(`  └─ Link     : ${l.link}`);
+
+    for (let i = 0; i < listings.length; i++) {
+      print('');
+      logRawVsParsed(rawItems[i], listings[i], print);
+    }
   }
 
-  if (listings.length === 0) console.log('  (keine Inserate gefunden)');
+  print(`\n${'═'.repeat(66)}`);
+  print(`  GESAMT: ${totalListings} Inserate über ${pages.length} Seite(n)`);
+  print('═'.repeat(66));
 
-  console.log(`\n${'═'.repeat(66)}`);
-  console.log(`  GESAMT: ${listings.length} Inserate`);
-  console.log('═'.repeat(66));
+  if (mdPath) {
+    const abs = path.resolve(mdPath);
+    await fs.writeFile(abs, `# ImmoScout24 Test Output\n\n\`\`\`text\n${lines.join('\n')}\n\`\`\`\n`, 'utf8');
+    print(`\nMarkdown-Report geschrieben: ${abs}`);
+  }
 
 } catch (err) {
-  console.error('\nFehler:', err.message);
+  print(`\nFehler: ${err.message}`);
 }
 
-console.log('──────────────────────────────────────────────────────────────────\n');
+print('──────────────────────────────────────────────────────────────────\n');

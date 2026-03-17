@@ -8,7 +8,7 @@
  * Extensible: additional types like 'kauf' can be added to LISTING_TYPES.
  */
 
-import { buildHash, parsePublishedDate } from '../../utils.js';
+import { buildHash, parsePublishedDate, pickByPattern } from '../../utils.js';
 
 // ── Listing Types ───────────────────────────────────────────────────────────────
 
@@ -41,18 +41,6 @@ function buildPageUrl(baseUrl, pageNum) {
 
 // ── Helper Functions ────────────────────────────────────────────────────────────
 
-/** Extracts the living area from the tags field (first segment, separated by ·) */
-function extractSize(tags) {
-  if (!tags) return null;
-  return tags.split('·').map((s) => s.trim()).filter(Boolean)[0] ?? null;
-}
-
-/** Extracts the room count from the tags field (second segment, separated by ·) */
-function extractRooms(tags) {
-  if (!tags) return null;
-  return tags.split('·').map((s) => s.trim()).filter(Boolean)[1] ?? null;
-}
-
 /** Replaces thumbnail path and low resolution with a larger image */
 function upscaleImageUrl(url) {
   return (url || '')
@@ -60,15 +48,15 @@ function upscaleImageUrl(url) {
     .replace(/s-l\d+\./, 's-l640.');
 }
 
-
 function parseListing(raw) {
-  const link = `https://www.kleinanzeigen.de${raw.link}`;
+  const link     = `https://www.kleinanzeigen.de${raw.link}`;
+  const tagParts = (raw.tags ?? '').split('·').map((s) => s.trim());
   return {
     ...raw,
     id:       buildHash(raw.id, link),
     link,
-    size:     extractSize(raw.tags),
-    rooms:    extractRooms(raw.tags),
+    size:     pickByPattern(tagParts, 'size'),
+    rooms:    pickByPattern(tagParts, 'rooms'),
     image:    upscaleImageUrl(raw.image),
     listedAt: parsePublishedDate(raw.listedAt),
   };
@@ -79,7 +67,6 @@ function parseListing(raw) {
 const FIELD_EXTRACTORS = {
   id:          { attr: 'data-adid', scope: '.aditem' },
   price:       { text: '.aditem-main--middle--price-shipping--price' },
-  size:        { text: '.aditem-main .text-module-end' },
   tags:        { text: '.aditem-main--middle--tags' },
   title:       { text: '.aditem-main .text-module-begin a' },
   link:        { attr: 'href',      scope: '.aditem-main .text-module-begin a' },

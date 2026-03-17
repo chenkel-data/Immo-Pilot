@@ -44,6 +44,7 @@ function readPersistedFilters() {
     maxPrice: '',
     minSize: '',
     minRooms: '',
+    maxAvailableFrom: '',
   };
   try {
     const raw = localStorage.getItem(FILTERS_STORAGE_KEY);
@@ -110,6 +111,7 @@ export default function App() {
   const [maxPrice, setMaxPrice] = useState(persistedFilters.maxPrice);
   const [minSize, setMinSize] = useState(persistedFilters.minSize);
   const [minRooms, setMinRooms] = useState(persistedFilters.minRooms);
+  const [maxAvailableFrom, setMaxAvailableFrom] = useState(persistedFilters.maxAvailableFrom);
 
   /* initial load */
   useEffect(() => { loadStats(); loadConfigStats(); loadRuns(); loadConfigs(); loadProviders(); loadScrapeConfig(); }, []);
@@ -125,8 +127,9 @@ export default function App() {
       maxPrice,
       minSize,
       minRooms,
+      maxAvailableFrom,
     }));
-  }, [searchQuery, listingTypeFilter, providerFilter, publisherFilter, minPrice, maxPrice, minSize, minRooms]);
+  }, [searchQuery, listingTypeFilter, providerFilter, publisherFilter, minPrice, maxPrice, minSize, minRooms, maxAvailableFrom]);
 
   useEffect(() => {
     const params = { include_blacklisted: true };
@@ -150,7 +153,7 @@ export default function App() {
     currentListingParamsRef.current = { include_blacklisted: true };
     setActiveTab(TABS.UNSEEN);
     setPage(1);
-    setSearchQuery(''); setMinPrice(''); setMaxPrice(''); setMinSize(''); setMinRooms(''); setListingTypeFilter(''); setProviderFilter(''); setPublisherFilter('');
+    setSearchQuery(''); setMinPrice(''); setMaxPrice(''); setMinSize(''); setMinRooms(''); setListingTypeFilter(''); setProviderFilter(''); setPublisherFilter(''); setMaxAvailableFrom('');
   }, []);
 
   const isProviderFilterActive = !activeConfigId && activeTab === TABS.ALL;
@@ -167,6 +170,7 @@ export default function App() {
     if (maxPrice) list = list.filter(l => parseNum(l.price) <= Number(maxPrice));
     if (minSize) list = list.filter(l => parseNum(l.size) >= Number(minSize));
     if (minRooms) list = list.filter(l => { const r = parseNum(l.rooms); return r && r >= Number(minRooms); });
+    if (maxAvailableFrom) list = list.filter(l => !l.available_from || l.available_from === 'sofort' || l.available_from <= maxAvailableFrom);
 
     if (keywords.length > 0) {
       list = list.filter(l => {
@@ -176,7 +180,7 @@ export default function App() {
       });
     }
     return list;
-  }, [listings, listingTypeFilter, publisherFilter, searchQuery, minPrice, maxPrice, minSize, minRooms, scrapeConfig]);
+  }, [listings, listingTypeFilter, publisherFilter, searchQuery, minPrice, maxPrice, minSize, minRooms, maxAvailableFrom, scrapeConfig]);
 
   const filteredBase = useMemo(() => {
     if (activeConfigId) return uiFilteredListings.filter(l => l.search_config_id === activeConfigId);
@@ -187,7 +191,14 @@ export default function App() {
   const filtered = useMemo(() => {
     let list = [...filteredBase];
     if (activeTab === TABS.UNSEEN) list = list.filter(l => !l.is_blacklisted && !l.is_seen);
-    else if (activeTab === TABS.FAVORITES) list = list.filter(l => !l.is_blacklisted && l.is_favorite);
+    else if (activeTab === TABS.FAVORITES) {
+      list = list.filter(l => !l.is_blacklisted && l.is_favorite);
+      list.sort((a, b) => {
+        const ta = a.favorited_at ? new Date(a.favorited_at).getTime() : 0;
+        const tb = b.favorited_at ? new Date(b.favorited_at).getTime() : 0;
+        return tb - ta;
+      });
+    }
     else if (activeTab === TABS.BLACKLISTED) {
       list = list.filter(l => l.is_blacklisted);
       list.sort((a, b) => {
@@ -250,7 +261,7 @@ export default function App() {
   }, []);
   const unseenCount = listings.filter(l => !l.is_seen && !l.is_blacklisted).length;
 
-  const resetFilters = () => { setSearchQuery(''); setMinPrice(''); setMaxPrice(''); setMinSize(''); setMinRooms(''); setListingTypeFilter(''); setProviderFilter(''); setPublisherFilter(''); };
+  const resetFilters = () => { setSearchQuery(''); setMinPrice(''); setMaxPrice(''); setMinSize(''); setMinRooms(''); setListingTypeFilter(''); setProviderFilter(''); setPublisherFilter(''); setMaxAvailableFrom(''); };
 
   const activeAgent = configs.find(c => c.id === activeConfigId);
   const activeAgentName = activeAgent ? activeAgent.name : null;
@@ -423,6 +434,7 @@ export default function App() {
               onSearch={setSearchQuery} onMinPrice={setMinPrice} onMaxPrice={setMaxPrice} onMinSize={setMinSize} onMinRooms={setMinRooms}
               onPublisherFilter={setPublisherFilter}
               onProviderFilter={setProviderFilter}
+              maxAvailableFrom={maxAvailableFrom} onMaxAvailableFrom={setMaxAvailableFrom}
               onReset={resetFilters}
             />
 

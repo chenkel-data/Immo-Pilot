@@ -59,6 +59,11 @@ export function formatListingDate(iso) {
   });
 }
 
+export function formatAvailableFrom(value) {
+  const m = String(value ?? '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : value;
+}
+
 /**
  * Validates whether an image URL is usable.
  */
