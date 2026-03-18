@@ -20,18 +20,23 @@ import { now } from '../utils.js';
  */
 export async function runScrapeForConfig(searchConfig, hooks = {}) {
   const provider = getProvider(searchConfig.provider);
-if (!provider) throw new Error(`Provider not found: ${searchConfig.provider}`);
+  if (!provider) throw new Error(`Provider not found: ${searchConfig.provider}`);
 
   // Load scrape URL from extra_params
   let extraParams = {};
-  try { extraParams = JSON.parse(searchConfig.extra_params || '{}'); } catch {}
+  try {
+    extraParams = JSON.parse(searchConfig.extra_params || '{}');
+  } catch {}
 
   const directUrl = extraParams.directUrl;
-    if (!directUrl) throw new Error(`No scrape URL configured for agent "${searchConfig.name || searchConfig.city}"`);
+  if (!directUrl)
+    throw new Error(
+      `No scrape URL configured for agent "${searchConfig.name || searchConfig.city}"`,
+    );
 
-    // Remove hardcoded page number, engine always starts at page 1
+  // Remove hardcoded page number, engine always starts at page 1
   const url = directUrl.replace(/\/seite:\d+/, '');
-  
+
   const maxPages = searchConfig.max_pages || 10;
   const usesCustomScraper = typeof provider.scrape === 'function';
   const crawlConfig = usesCustomScraper ? null : provider.getCrawlConfig(url, maxPages);
@@ -43,26 +48,28 @@ if (!provider) throw new Error(`Provider not found: ${searchConfig.provider}`);
   });
 
   console.log(`\n${'═'.repeat(70)}`);
-    console.log(`[scraper] Starting scrape:`);
-    console.log(`  Provider:   ${provider.name}`);
-    console.log(`  Type:       ${searchConfig.listing_type}`);
-    console.log(`  Agent:      ${searchConfig.name || searchConfig.city}`);
-    console.log(`  Max Pages:  ${searchConfig.max_pages || 10}`);
-    console.log(`  🔗 URL:     ${url}`);
+  console.log(`[scraper] Starting scrape:`);
+  console.log(`  Provider:   ${provider.name}`);
+  console.log(`  Type:       ${searchConfig.listing_type}`);
+  console.log(`  Agent:      ${searchConfig.name || searchConfig.city}`);
+  console.log(`  Max Pages:  ${searchConfig.max_pages || 10}`);
+  console.log(`  🔗 URL:     ${url}`);
   console.log(`${'═'.repeat(70)}\n`);
   const startedAt = Date.now();
 
   try {
-      // Use the appropriate engine based on the provider
+    // Use the appropriate engine based on the provider
     const listings = usesCustomScraper
       ? await provider.scrape(url, maxPages, { signal: hooks.signal, onProgress: hooks.onProgress })
       : await crawl(crawlConfig, { signal: hooks.signal, onProgress: hooks.onProgress });
-console.log(`[scraper] ${listings.length} listings found.`);
+    console.log(`[scraper] ${listings.length} listings found.`);
 
-    const existingIds = new Set(getExistingIds(searchConfig.provider, searchConfig.listing_type, searchConfig.id));
+    const existingIds = new Set(
+      getExistingIds(searchConfig.provider, searchConfig.listing_type, searchConfig.id),
+    );
     const scrapedIds = new Set();
     let newCount = 0;
-const scrapeTime = now(); // uniform timestamp for all listings in this run
+    const scrapeTime = now(); // uniform timestamp for all listings in this run
 
     for (const listing of listings) {
       const isNew = !existingIds.has(listing.id);
@@ -94,13 +101,26 @@ const scrapeTime = now(); // uniform timestamp for all listings in this run
 
     const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
     const uniqueCount = scrapedIds.size;
-console.log(`[scraper] Done: ${listings.length} raw (${uniqueCount} unique), ${newCount} new – ${elapsed}s`);
+    console.log(
+      `[scraper] Done: ${listings.length} raw (${uniqueCount} unique), ${newCount} new – ${elapsed}s`,
+    );
 
-    finishScrapeRun(runId, { endedAt: now(), status: 'success', newCount, totalCount: uniqueCount });
+    finishScrapeRun(runId, {
+      endedAt: now(),
+      status: 'success',
+      newCount,
+      totalCount: uniqueCount,
+    });
     return { newCount, totalCount: uniqueCount };
   } catch (err) {
-      console.error(`[scraper] Error:`, err);
-    finishScrapeRun(runId, { endedAt: now(), status: 'error', newCount: 0, totalCount: 0, error: err.message });
+    console.error(`[scraper] Error:`, err);
+    finishScrapeRun(runId, {
+      endedAt: now(),
+      status: 'error',
+      newCount: 0,
+      totalCount: 0,
+      error: err.message,
+    });
     throw err;
   }
 }
@@ -124,7 +144,12 @@ export async function runAllScrapes(hooks = {}) {
       results[key] = await runScrapeForConfig(cfg, {
         signal: hooks.signal,
         onProgress: (p) => {
-          hooks.onProgress?.({ ...p, configIdx: i + 1, totalConfigs: configs.length, configName: cfg.name || cfg.city });
+          hooks.onProgress?.({
+            ...p,
+            configIdx: i + 1,
+            totalConfigs: configs.length,
+            configName: cfg.name || cfg.city,
+          });
         },
       });
     } catch (err) {

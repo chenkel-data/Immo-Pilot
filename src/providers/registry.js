@@ -22,7 +22,6 @@ function register(provider) {
 register(kleinanzeigen);
 register(immoscout24);
 
-
 /**
  * Returns a provider by its ID.
  */

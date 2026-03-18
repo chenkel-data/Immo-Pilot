@@ -19,7 +19,7 @@ export function notFoundHandler(req, res, next) {
 /**
  * Global error handler.
  */
-export function errorHandler(err, req, res, next) {
+export function errorHandler(err, req, res, _next) {
   const status = err.status || err.statusCode || 500;
   const message = err.message || 'Internal Server Error';
 
@@ -51,7 +51,7 @@ export function errorHandler(err, req, res, next) {
  */
 export function requestLogger(req, res, next) {
   const start = Date.now();
-  
+
   res.on('finish', () => {
     const duration = Date.now() - start;
     const logLevel = res.statusCode >= 400 ? 'ERROR' : 'INFO';
