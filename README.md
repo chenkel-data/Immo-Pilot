@@ -31,7 +31,7 @@ Currently supported: **ImmobilienScout24** & **Kleinanzeigen** – more provider
 - 🚫 **Blacklist** – per click or globally via keywords
 - ❤️ **Favorites** – persisted even if the agent is deleted
 - 🔄 **Scraping** – manual, on startup, or via cron; with pagination and duplicate filtering
-- 🧩 **Provider system** – currently: Kleinanzeigen; more planned
+- 🧩 **Provider system** – currently: **ImmobilienScout24** & **Kleinanzeigen**; more planned
 - 🗄️ **Local** – SQLite
 
 ## Quickstart

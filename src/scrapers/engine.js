@@ -34,8 +34,8 @@ async function extractField(el, spec) {
 
 async function scrapePage(page, sourceConfig) {
   const container = sourceConfig.itemSelector.trim();
-  const elements  = await page.$$(container);
-  const listings  = [];
+  const elements = await page.$$(container);
+  const listings = [];
 
   for (const el of elements) {
     const raw = {};
@@ -50,7 +50,7 @@ async function scrapePage(page, sourceConfig) {
     if (!raw.id && !raw.title) continue;
 
     const listing = sourceConfig.parseListing ? sourceConfig.parseListing(raw) : raw;
-    if (!listing) continue; 
+    if (!listing) continue;
     if (sourceConfig.filter && !sourceConfig.filter(listing)) continue;
 
     listings.push(listing);
@@ -70,7 +70,7 @@ async function scrapePage(page, sourceConfig) {
  */
 export async function crawl(sourceConfig, opts = {}) {
   const maxPages = sourceConfig.maxPages ?? 5;
-  const signal   = opts.signal;
+  const signal = opts.signal;
   const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : null;
 
   const browser = await chromium.launch({ headless: true });
@@ -81,17 +81,17 @@ export async function crawl(sourceConfig, opts = {}) {
     extraHTTPHeaders: { 'Accept-Language': 'de-DE,de;q=0.9' },
   });
 
-  const page    = await context.newPage();
+  const page = await context.newPage();
   const allListings = [];
-  let   cookieDismissed = false;
+  let cookieDismissed = false;
 
   // Duplicate detection: track listing IDs from the previous page
-  let prevPageIds        = new Set();
+  let prevPageIds = new Set();
   let duplicatePageCount = 0;
 
   try {
     let currentUrl = sourceConfig.url;
-    let pageNum    = 1;
+    let pageNum = 1;
     let effectiveMaxPages = maxPages;
 
     while (currentUrl && pageNum <= effectiveMaxPages) {
@@ -102,9 +102,11 @@ export async function crawl(sourceConfig, opts = {}) {
       console.log(`[engine] Page ${pageNum}/${effectiveMaxPages}: ${currentUrl}`);
 
       await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-      await page.waitForSelector(sourceConfig.itemSelector.trim().split(' ')[0], {
-        timeout: 15_000,
-      }).catch(() => {});
+      await page
+        .waitForSelector(sourceConfig.itemSelector.trim().split(' ')[0], {
+          timeout: 15_000,
+        })
+        .catch(() => {});
 
       await sleep(800 + Math.random() * 800);
 
@@ -113,7 +115,9 @@ export async function crawl(sourceConfig, opts = {}) {
         try {
           await page.click('#gdpr-banner-accept', { timeout: 3_000 });
           cookieDismissed = true;
-        } catch { /* no banner */ }
+        } catch {
+          /* no banner */
+        }
       }
 
       // Extract listings from this page
@@ -125,20 +129,27 @@ export async function crawl(sourceConfig, opts = {}) {
       // If ≥ X% of the current page's IDs match the previous page's IDs,
       // it counts as a duplicate page. Stop scraping after 2 consecutive duplicate pages.
       if (pageListings.length > 0 && prevPageIds.size > 0) {
-        const currentIds = new Set(pageListings.map(l => l.id));
-        const matches    = [...currentIds].filter(id => prevPageIds.has(id)).length;
-        const overlap    = matches / currentIds.size;
+        const currentIds = new Set(pageListings.map((l) => l.id));
+        const matches = [...currentIds].filter((id) => prevPageIds.has(id)).length;
+        const overlap = matches / currentIds.size;
         if (overlap >= 0.99) {
           duplicatePageCount++;
-          console.log(`[engine] Page ${pageNum} duplicate (${(overlap * 100).toFixed(0)}% overlap) – count: ${duplicatePageCount}/2`);
+          console.log(
+            `[engine] Page ${pageNum} duplicate (${(overlap * 100).toFixed(0)}% overlap) – count: ${duplicatePageCount}/2`,
+          );
           if (duplicatePageCount >= 2) {
-            console.log('[engine] Max page detected heuristically – stopping scrape (duplicate page).');
+            console.log(
+              '[engine] Max page detected heuristically – stopping scrape (duplicate page).',
+            );
             break;
           }
           // Skip duplicate page – do not add listings again
           pageNum++;
           if (typeof sourceConfig.buildPageUrl === 'function') {
-            currentUrl = pageNum <= effectiveMaxPages ? sourceConfig.buildPageUrl(sourceConfig.url, pageNum) : null;
+            currentUrl =
+              pageNum <= effectiveMaxPages
+                ? sourceConfig.buildPageUrl(sourceConfig.url, pageNum)
+                : null;
           }
           continue;
         } else {
@@ -146,13 +157,15 @@ export async function crawl(sourceConfig, opts = {}) {
         }
         prevPageIds = currentIds;
       } else if (pageListings.length > 0) {
-        prevPageIds = new Set(pageListings.map(l => l.id));
+        prevPageIds = new Set(pageListings.map((l) => l.id));
       }
 
       allListings.push(...pageListings);
 
       // Report progress (completed pages)
-      try { onProgress && onProgress({ pageNum, maxPages: effectiveMaxPages }); } catch {}
+      try {
+        onProgress && onProgress({ pageNum, maxPages: effectiveMaxPages });
+      } catch {}
 
       // No results → no further pages available
       if (pageListings.length === 0) {
@@ -165,7 +178,10 @@ export async function crawl(sourceConfig, opts = {}) {
       // 2. Fallback: DOM pagination link
       if (typeof sourceConfig.buildPageUrl === 'function') {
         const nextNum = pageNum + 1;
-        currentUrl = nextNum <= effectiveMaxPages ? sourceConfig.buildPageUrl(sourceConfig.url, nextNum) : null;
+        currentUrl =
+          nextNum <= effectiveMaxPages
+            ? sourceConfig.buildPageUrl(sourceConfig.url, nextNum)
+            : null;
       } else {
         currentUrl = await page.evaluate(() => {
           const selectors = [
@@ -175,6 +191,7 @@ export async function crawl(sourceConfig, opts = {}) {
             '#srchrslt-pagination .pagination-next a',
           ];
           for (const sel of selectors) {
+            // eslint-disable-next-line no-undef
             const el = document.querySelector(sel);
             if (el?.href) return el.href;
           }

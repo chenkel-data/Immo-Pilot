@@ -14,18 +14,13 @@ import listingsRouter from './routes/listings.js';
 import scraperRouter from './routes/scraper.js';
 import configsRouter from './routes/configs.js';
 import { runAllScrapes } from './services/scraperService.js';
-import {
-  requestLogger,
-  errorHandler,
-  notFoundHandler,
-} from './middleware/errorHandler.js';
+import { requestLogger, errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
-
 
 app.use(cors());
 app.use(compression());
@@ -42,7 +37,6 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/api/listings', listingsRouter);
 app.use('/api/scrape', scraperRouter);
 app.use('/api/configs', configsRouter);
-
 
 import { getAllProviders } from './providers/registry.js';
 app.get('/api/providers', (_req, res) => res.json(getAllProviders()));
@@ -63,8 +57,8 @@ const CRON_ENABLED = process.env.SCRAPE_CRON_ENABLED === 'true';
 
 if (CRON_ENABLED) {
   cron.schedule(CRON, async () => {
-      console.log(`[cron] Starting scheduled scrape (${new Date().toLocaleTimeString('en-US')})`);
-      await runAllScrapes().catch((err) => console.error('[cron] Error:', err));
+    console.log(`[cron] Starting scheduled scrape (${new Date().toLocaleTimeString('en-US')})`);
+    await runAllScrapes().catch((err) => console.error('[cron] Error:', err));
   });
   console.log(`[cron] Scheduler active: "${CRON}"`);
 } else {
@@ -74,12 +68,12 @@ if (CRON_ENABLED) {
 // ── Start Server ────────────────────────────────────────────────────────────
 
 app.listen(PORT, async () => {
-console.log(`\n🏠 ImmoPilot running at http://localhost:${PORT}`);
-    console.log(`   Environment: ${NODE_ENV}`);
-    console.log(`   Cron: ${CRON_ENABLED ? CRON : 'disabled'}\n`);
+  console.log(`\n🏠 ImmoPilot running at http://localhost:${PORT}`);
+  console.log(`   Environment: ${NODE_ENV}`);
+  console.log(`   Cron: ${CRON_ENABLED ? CRON : 'disabled'}\n`);
 
   if (process.env.SCRAPE_ON_START === 'true') {
-      console.log('[startup] Running initial scrape...');
-      runAllScrapes().catch((err) => console.error('[startup] Error:', err));
+    console.log('[startup] Running initial scrape...');
+    runAllScrapes().catch((err) => console.error('[startup] Error:', err));
   }
 });

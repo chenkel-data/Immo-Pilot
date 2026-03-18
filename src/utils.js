@@ -20,7 +20,6 @@ export function removeNewline(s) {
   return typeof s === 'string' ? s.replace(/[\r\n]+/g, ' ') : s;
 }
 
-
 export function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -44,7 +43,9 @@ export function normalizeAvailableFrom(value) {
   const year = m[3].length === 2 ? `20${m[3]}` : m[3];
   const isoDate = `${year}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
   const parsed = new Date(`${isoDate}T00:00:00Z`);
-  return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== isoDate ? raw : isoDate;
+  return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== isoDate
+    ? raw
+    : isoDate;
 }
 
 // ── Listing Field Patterns ───────────────────────────────────────────────────
@@ -55,9 +56,10 @@ export function normalizeAvailableFrom(value) {
  */
 export const LISTING_PATTERNS = {
   price: /[\d.,]+\s*€/,
-  size:  /[\d.,]+\s*m²/,
-  rooms: /[\d.,]+\s*Zi(?:mmer)?\.?/,  
-  date:  /^\d{2}\.\d{2}\.\d{2,4}$/,};
+  size: /[\d.,]+\s*m²/,
+  rooms: /[\d.,]+\s*Zi(?:mmer)?\.?/,
+  date: /^\d{2}\.\d{2}\.\d{2,4}$/,
+};
 
 /**
  * @param {string[]} values  – flat array of candidate strings
@@ -104,7 +106,9 @@ export function parsePublishedDate(value, baseDate = new Date()) {
     return result.toISOString();
   }
 
-  const todayOrYesterdayMatch = normalized.match(/^(heute|gestern)(?:,?\s*(\d{1,2}):(\d{2}))?(?:\s*uhr)?$/i);
+  const todayOrYesterdayMatch = normalized.match(
+    /^(heute|gestern)(?:,?\s*(\d{1,2}):(\d{2}))?(?:\s*uhr)?$/i,
+  );
   if (todayOrYesterdayMatch) {
     const [, dayToken, hh = '00', mm = '00'] = todayOrYesterdayMatch;
     if (dayToken === 'gestern') {
@@ -114,7 +118,9 @@ export function parsePublishedDate(value, baseDate = new Date()) {
     return result.toISOString();
   }
 
-  const relativeMatch = normalized.match(/^vor\s+(einer?|einem|\d+)\s+(sekunden?|minuten?|stunden?|tagen?|tage|tag|wochen?|monaten?|monate|monat)$/i);
+  const relativeMatch = normalized.match(
+    /^vor\s+(einer?|einem|\d+)\s+(sekunden?|minuten?|stunden?|tagen?|tage|tag|wochen?|monaten?|monate|monat)$/i,
+  );
   if (relativeMatch) {
     const amountRaw = relativeMatch[1];
     const amount = /^(eine[rm]?|einem)$/i.test(amountRaw) ? 1 : Number(amountRaw);
@@ -129,7 +135,7 @@ export function parsePublishedDate(value, baseDate = new Date()) {
     } else if (unit.startsWith('tag')) {
       result.setDate(result.getDate() - amount);
     } else if (unit.startsWith('woch')) {
-      result.setDate(result.getDate() - (amount * 7));
+      result.setDate(result.getDate() - amount * 7);
     } else if (unit.startsWith('monat')) {
       result.setMonth(result.getMonth() - amount);
     }
@@ -137,11 +143,21 @@ export function parsePublishedDate(value, baseDate = new Date()) {
     return result.toISOString();
   }
 
-  const absoluteDateMatch = normalized.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})(?:,?\s*(\d{1,2}):(\d{2}))?(?:\s*uhr)?$/i);
+  const absoluteDateMatch = normalized.match(
+    /^(\d{1,2})\.(\d{1,2})\.(\d{2,4})(?:,?\s*(\d{1,2}):(\d{2}))?(?:\s*uhr)?$/i,
+  );
   if (absoluteDateMatch) {
     const [, dd, mm, yyyyRaw, hh = '00', min = '00'] = absoluteDateMatch;
     const yyyy = yyyyRaw.length === 2 ? `20${yyyyRaw}` : yyyyRaw;
-    const parsed = new Date(Number(yyyy), Number(mm) - 1, Number(dd), Number(hh), Number(min), 0, 0);
+    const parsed = new Date(
+      Number(yyyy),
+      Number(mm) - 1,
+      Number(dd),
+      Number(hh),
+      Number(min),
+      0,
+      0,
+    );
     if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
   }
 

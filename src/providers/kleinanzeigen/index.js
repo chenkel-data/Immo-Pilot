@@ -43,21 +43,19 @@ function buildPageUrl(baseUrl, pageNum) {
 
 /** Replaces thumbnail path and low resolution with a larger image */
 function upscaleImageUrl(url) {
-  return (url || '')
-    .replace('/thumbs/images/', '/images/')
-    .replace(/s-l\d+\./, 's-l640.');
+  return (url || '').replace('/thumbs/images/', '/images/').replace(/s-l\d+\./, 's-l640.');
 }
 
 function parseListing(raw) {
-  const link     = `https://www.kleinanzeigen.de${raw.link}`;
+  const link = `https://www.kleinanzeigen.de${raw.link}`;
   const tagParts = (raw.tags ?? '').split('·').map((s) => s.trim());
   return {
     ...raw,
-    id:       buildHash(raw.id, link),
+    id: buildHash(raw.id, link),
     link,
-    size:     pickByPattern(tagParts, 'size'),
-    rooms:    pickByPattern(tagParts, 'rooms'),
-    image:    upscaleImageUrl(raw.image),
+    size: pickByPattern(tagParts, 'size'),
+    rooms: pickByPattern(tagParts, 'rooms'),
+    image: upscaleImageUrl(raw.image),
     listedAt: parsePublishedDate(raw.listedAt),
   };
 }
@@ -65,16 +63,16 @@ function parseListing(raw) {
 // ── Field Extraction ─────────────────────────────────────────────────────────────
 
 const FIELD_EXTRACTORS = {
-  id:          { attr: 'data-adid', scope: '.aditem' },
-  price:       { text: '.aditem-main--middle--price-shipping--price' },
-  tags:        { text: '.aditem-main--middle--tags' },
-  title:       { text: '.aditem-main .text-module-begin a' },
-  link:        { attr: 'href',      scope: '.aditem-main .text-module-begin a' },
+  id: { attr: 'data-adid', scope: '.aditem' },
+  price: { text: '.aditem-main--middle--price-shipping--price' },
+  tags: { text: '.aditem-main--middle--tags' },
+  title: { text: '.aditem-main .text-module-begin a' },
+  link: { attr: 'href', scope: '.aditem-main .text-module-begin a' },
   description: { text: '.aditem-main .aditem-main--middle--description' },
-  address:     { text: '.aditem-main--top--left' },
-  listedAt:    { text: '.aditem-main--top--right' },
-  image:       { attr: 'src',       scope: 'img' },
-  publisher:   { text: '.aditem-main--bottom' },
+  address: { text: '.aditem-main--top--left' },
+  listedAt: { text: '.aditem-main--top--right' },
+  image: { attr: 'src', scope: 'img' },
+  publisher: { text: '.aditem-main--bottom' },
 };
 
 // ── Crawl Config Builder ───────────────────────────────────────────────────────

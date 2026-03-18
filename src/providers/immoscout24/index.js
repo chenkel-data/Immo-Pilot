@@ -12,10 +12,17 @@
  *   - shorttermaccommodation → Wohnen auf Zeit
  */
 
-import { buildHash, LISTING_PATTERNS, parsePublishedDate, pickByPattern, sleep } from '../../utils.js';
+import {
+  buildHash,
+  LISTING_PATTERNS,
+  parsePublishedDate,
+  pickByPattern,
+  sleep,
+} from '../../utils.js';
 
 // Set LOG_RAW_VS_PARSED=1 to enable per-listing debug output.
-const LOG_RAW_VS_PARSED = process.env.LOG_RAW_VS_PARSED === '1' || process.env.LOG_RAW_VS_PARSED === 'true';
+const LOG_RAW_VS_PARSED =
+  process.env.LOG_RAW_VS_PARSED === '1' || process.env.LOG_RAW_VS_PARSED === 'true';
 
 // ── Error Class ─────────────────────────────────────────────────────────────
 
@@ -30,10 +37,10 @@ class Is24ProviderError extends Error {
 // ── Property Types ──────────────────────────────────────────────────────────
 
 const PROPERTY_KINDS = [
-  { key: 'apartmentrent',          label: 'Wohnung mieten' },
-  { key: 'apartmentbuy',           label: 'Wohnung kaufen' },
-  { key: 'houserent',              label: 'Haus mieten' },
-  { key: 'housebuy',               label: 'Haus kaufen' },
+  { key: 'apartmentrent', label: 'Wohnung mieten' },
+  { key: 'apartmentbuy', label: 'Wohnung kaufen' },
+  { key: 'houserent', label: 'Haus mieten' },
+  { key: 'housebuy', label: 'Haus kaufen' },
   { key: 'shorttermaccommodation', label: 'Wohnen auf Zeit' },
 ];
 
@@ -42,10 +49,10 @@ const KNOWN_PROPERTY_KEYS = new Set(PROPERTY_KINDS.map((k) => k.key));
 // ── Path Routing ────────────────────────────────────────────────────────────
 
 const PATH_ROUTES = [
-  { suffix: 'wohnung-mieten',  kind: 'apartmentrent' },
-  { suffix: 'wohnung-kaufen',  kind: 'apartmentbuy' },
-  { suffix: 'haus-mieten',     kind: 'houserent' },
-  { suffix: 'haus-kaufen',     kind: 'housebuy' },
+  { suffix: 'wohnung-mieten', kind: 'apartmentrent' },
+  { suffix: 'wohnung-kaufen', kind: 'apartmentbuy' },
+  { suffix: 'haus-mieten', kind: 'houserent' },
+  { suffix: 'haus-kaufen', kind: 'housebuy' },
   { suffix: 'wohnen-auf-zeit', kind: 'shorttermaccommodation' },
 ];
 
@@ -56,15 +63,29 @@ function findRoute(suffix) {
 // ── Parameter Processing ────────────────────────────────────────────────────
 
 const PASSTHROUGH_KEYS = new Set([
-  'price', 'pricetype', 'numberofrooms', 'livingspace',
-  'geocoordinates', 'geocodes', 'sorting', 'fulltext',
-  'apartmenttypes', 'floor', 'newbuilding', 'equipment',
-  'petsallowedtypes', 'constructionyear', 'energyefficiencyclasses',
-  'exclusioncriteria', 'heatingtypes', 'haspromotion', 'startrentaldate',
+  'price',
+  'pricetype',
+  'numberofrooms',
+  'livingspace',
+  'geocoordinates',
+  'geocodes',
+  'sorting',
+  'fulltext',
+  'apartmenttypes',
+  'floor',
+  'newbuilding',
+  'equipment',
+  'petsallowedtypes',
+  'constructionyear',
+  'energyefficiencyclasses',
+  'exclusioncriteria',
+  'heatingtypes',
+  'haspromotion',
+  'startrentaldate',
 ]);
 
 // Sort codes: Web UI uses numeric IDs, the API uses named identifiers
-const SORT_LABELS = { '1': 'standard', '2': '-firstactivation' };
+const SORT_LABELS = { 1: 'standard', 2: '-firstactivation' };
 
 function resolveSortCode(code) {
   return SORT_LABELS[code] ?? code;
@@ -74,15 +95,15 @@ function resolveSortCode(code) {
 
 /**
  * Extracts geo information from the path segments of an IS24 URL.
- * @param {string[]} segments 
+ * @param {string[]} segments
  * @returns {{ isRadius: boolean, path: string, segments: string[] }}
  */
 function extractGeoInfo(segments) {
-  const cleaned  = segments.filter((s) => s.toLowerCase() !== 'suche');
+  const cleaned = segments.filter((s) => s.toLowerCase() !== 'suche');
   const isRadius = cleaned.includes('radius');
   return {
     isRadius,
-    path:     '/' + cleaned.join('/'),
+    path: '/' + cleaned.join('/'),
     segments: cleaned,
   };
 }
@@ -122,13 +143,13 @@ function parseSearchFromUrl(webUrl) {
   if (!route) {
     throw new Is24ProviderError(
       'Spezielle Filter werden nicht unterstützt. ' +
-      'Bitte verwende eine Standard-Suche (Wohnung/Haus mieten oder kaufen, Wohnen auf Zeit).',
+        'Bitte verwende eine Standard-Suche (Wohnung/Haus mieten oder kaufen, Wohnen auf Zeit).',
     );
   }
 
   return {
-    type:   route.kind,
-    geo:    extractGeoInfo(parts.slice(0, -1)),
+    type: route.kind,
+    geo: extractGeoInfo(parts.slice(0, -1)),
     params: extractParams(parsed.searchParams),
   };
 }
@@ -141,7 +162,7 @@ function parseSearchFromUrl(webUrl) {
  */
 function buildApiEndpoint(search) {
   const fields = {
-    searchType:     search.geo.isRadius ? 'radius' : 'region',
+    searchType: search.geo.isRadius ? 'radius' : 'region',
     realestatetype: search.type,
   };
 
@@ -188,7 +209,7 @@ export function validateUrl(url) {
 
 const REQUEST_HEADERS = {
   'User-Agent': 'ImmoScout_28.3_34.0_._',
-  'Accept':     'application/json',
+  Accept: 'application/json',
 };
 
 async function requestPage(baseEndpoint, pageIdx, log = console.log) {
@@ -196,48 +217,49 @@ async function requestPage(baseEndpoint, pageIdx, log = console.log) {
   log(`[immoscout24] Seite ${pageIdx}: ${endpoint}`);
 
   const response = await fetch(endpoint, {
-    method:  'POST',
+    method: 'POST',
     headers: REQUEST_HEADERS,
   });
 
   if (!response.ok) {
-    const userMessage = response.status >= 400 && response.status < 500
-      ? `Diese Such-URL wird nicht unterstützt. Bitte verwende eine Standard-Suche ohne Kartenausschnitt oder spezielle Filter.`
-      : `API nicht erreichbar (HTTP ${response.status}). Bitte später erneut versuchen.`;
+    const userMessage =
+      response.status >= 400 && response.status < 500
+        ? `Diese Such-URL wird nicht unterstützt. Bitte verwende eine Standard-Suche ohne Kartenausschnitt oder spezielle Filter.`
+        : `API nicht erreichbar (HTTP ${response.status}). Bitte später erneut versuchen.`;
     throw new Is24ProviderError(userMessage, { page: pageIdx, status: response.status });
   }
 
   return response.json();
 }
 
-function transformResultItem(raw) {
+export function transformResultItem(raw) {
   if (!raw?.id) return null;
 
-  const attrs     = raw.attributes ?? [];
+  const attrs = raw.attributes ?? [];
   const attrValues = attrs.map((a) => String(a.value ?? ''));
-  const link      = `https://www.immobilienscout24.de/expose/${raw.id}`;
+  const link = `https://www.immobilienscout24.de/expose/${raw.id}`;
 
   return {
-    id:          buildHash('immoscout24', String(raw.id)),
-    title:       raw.title ?? '',
-    price:         pickByPattern(attrValues, 'price'),
-    size:          pickByPattern(attrValues, 'size'),
-    rooms:         pickByPattern(attrValues, 'rooms'),
+    id: buildHash('immoscout24', String(raw.id)),
+    title: raw.title ?? '',
+    price: pickByPattern(attrValues, 'price'),
+    size: pickByPattern(attrValues, 'size'),
+    rooms: pickByPattern(attrValues, 'rooms'),
     availableFrom: pickByPattern(attrValues, 'date'),
-    address:       raw.address?.line ?? null,
+    address: raw.address?.line ?? null,
     description: null,
-    publisher:   raw.isPrivate ? 'Privat' : 'Makler',
+    publisher: raw.isPrivate ? 'Privat' : 'Makler',
     link,
-    image:       raw.titlePicture?.full ?? raw.titlePicture?.preview ?? null,
-    listedAt:    parsePublishedDate(raw.published),
-    lat:         raw.address?.lat ?? null,
-    lon:         raw.address?.lon ?? null,
+    image: raw.titlePicture?.full ?? raw.titlePicture?.preview ?? null,
+    listedAt: parsePublishedDate(raw.published),
+    lat: raw.address?.lat ?? null,
+    lon: raw.address?.lon ?? null,
   };
 }
 
 export function logRawVsParsed(raw, parsed, log = console.log) {
-  const attrs   = raw.attributes ?? [];
-  const sep     = '─'.repeat(60);
+  const attrs = raw.attributes ?? [];
+  const sep = '─'.repeat(60);
   const hasWarn = attrs.some((a) => {
     const v = String(a.value ?? '');
     return !Object.values(LISTING_PATTERNS).some((re) => re.test(v));
@@ -245,13 +267,15 @@ export function logRawVsParsed(raw, parsed, log = console.log) {
 
   log(`[immoscout24] ┌ ${sep}`);
   log(`[immoscout24] │  ${raw.title || '(kein Titel)'}`);
-  log(`[immoscout24] │  Expose-ID  : ${raw.id}  →  https://www.immobilienscout24.de/expose/${raw.id}`);
+  log(
+    `[immoscout24] │  Expose-ID  : ${raw.id}  →  https://www.immobilienscout24.de/expose/${raw.id}`,
+  );
   log(`[immoscout24] │  Anbieter   : ${raw.isPrivate ? 'Privat' : 'Makler'}`);
   log(`[immoscout24] │  Adresse    : ${raw.address?.line ?? '–'}`);
   log(`[immoscout24] │  Veröff.    : ${raw.published ?? '–'}`);
   log(`[immoscout24] │  ── Rohe Attribute → Erkennung ──────────────────────────`);
   for (let i = 0; i < attrs.length; i++) {
-    const val     = String(attrs[i]?.value ?? '');
+    const val = String(attrs[i]?.value ?? '');
     const matched = Object.entries(LISTING_PATTERNS)
       .filter(([, re]) => re.test(val))
       .map(([k]) => k);
@@ -260,7 +284,7 @@ export function logRawVsParsed(raw, parsed, log = console.log) {
   }
   log(`[immoscout24] │  ── Parsed ───────────────────────────────────────────────`);
   log(`[immoscout24] │    Preis   : ${parsed.price ?? '–'}`);
-  log(`[immoscout24] │    Größe   : ${parsed.size  ?? '–'}`);
+  log(`[immoscout24] │    Größe   : ${parsed.size ?? '–'}`);
   log(`[immoscout24] │    Zimmer  : ${parsed.rooms ?? (hasWarn ? '– (⚠ fehlend)' : '–')}`);
   log(`[immoscout24] │    Einzug  : ${parsed.availableFrom ?? '–'}`);
   log(`[immoscout24] └ ${sep}`);
@@ -272,11 +296,13 @@ function collectListingsFromResponse(payload) {
     .filter((entry) => entry.type === 'EXPOSE_RESULT')
     .map((entry) => entry.item)
     .filter(Boolean);
-  const listings = rawItems.map((raw) => {
-    const parsed = transformResultItem(raw);
-    if (parsed && LOG_RAW_VS_PARSED) logRawVsParsed(raw, parsed);
-    return parsed;
-  }).filter(Boolean);
+  const listings = rawItems
+    .map((raw) => {
+      const parsed = transformResultItem(raw);
+      if (parsed && LOG_RAW_VS_PARSED) logRawVsParsed(raw, parsed);
+      return parsed;
+    })
+    .filter(Boolean);
   return { listings, rawItems };
 }
 
@@ -305,11 +331,7 @@ export async function scrape(inputUrl, maxPages = 10, opts = {}) {
  * @returns {Promise<{ mobileUrl: string, hitCount: number|string, pageCount: number, targetPages: number, pages: Array<{ pageNum: number, listings: object[] }> }>}
  */
 export async function scrapePages(inputUrl, maxPages = 10, opts = {}) {
-  const {
-    signal,
-    onProgress,
-    log = console.log,
-  } = opts;
+  const { signal, onProgress, log = console.log } = opts;
 
   // Detect if already an API URL
   const isApiEndpoint = inputUrl.includes('api.mobile.immobilienscout24.de');
@@ -330,9 +352,9 @@ export async function scrapePages(inputUrl, maxPages = 10, opts = {}) {
   }
 
   // Fetch first page (contains paging metadata)
-  const firstPage  = await requestPage(apiBase, 1, log);
-  const pageCount  = firstPage.numberOfPages ?? 1;
-  const hitCount   = firstPage.totalResults  ?? '?';
+  const firstPage = await requestPage(apiBase, 1, log);
+  const pageCount = firstPage.numberOfPages ?? 1;
+  const hitCount = firstPage.totalResults ?? '?';
   const targetPages = Math.min(maxPages, pageCount);
   const pages = [];
 
@@ -367,7 +389,7 @@ export async function scrapePages(inputUrl, maxPages = 10, opts = {}) {
 
 // ── Provider Exports ────────────────────────────────────────────────────────
 
-export const id   = 'immoscout24';
+export const id = 'immoscout24';
 export const name = 'ImmobilienScout24';
 export const listingTypes = PROPERTY_KINDS.map(({ key, label }) => ({ id: key, label }));
 
@@ -379,19 +401,23 @@ export function inferListingTypeFromUrl(url) {
 
   // Web URL: resolve suffix via routing table
   try {
-    const parsed    = new URL(url);
-    const parts  = parsed.pathname.split('/').filter(Boolean);
-    const tail      = parts[parts.length - 1];
-    const route     = findRoute(tail);
+    const parsed = new URL(url);
+    const parts = parsed.pathname.split('/').filter(Boolean);
+    const tail = parts[parts.length - 1];
+    const route = findRoute(tail);
     if (route) return route.kind;
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 
   // Mobile API URL: read realestatetype parameter
   try {
     const parsed = new URL(url);
     const rt = parsed.searchParams.get('realestatetype');
     if (rt && KNOWN_PROPERTY_KEYS.has(rt)) return rt;
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 
   return 'apartmentrent';
 }
