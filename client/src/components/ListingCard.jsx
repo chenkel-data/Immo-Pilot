@@ -55,6 +55,9 @@ const ListingCard = memo(function ListingCard({ listing: l, onSeen, onFavorite, 
   const providerLabel = PROVIDER_LABELS[l.provider] || l.provider;
   const publishedLabel = formatListingDate(l.listed_at);
   const availableFromLabel = formatAvailableFrom(l.available_from);
+  const firstSeenLabel = formatListingDate(l.first_seen);
+  const lastSeenLabel = formatListingDate(l.last_seen);
+  const seenMultipleTimes = l.first_seen && l.last_seen && l.first_seen !== l.last_seen;
 
   return (
     <article className={`card ${isNew ? 'card--new' : ''} ${l.is_seen ? 'card--seen' : ''} ${l.is_blacklisted ? 'card--blacklisted' : ''}`}>
@@ -114,6 +117,9 @@ const ListingCard = memo(function ListingCard({ listing: l, onSeen, onFavorite, 
           </div>
         </div>
         <h2 className="card-title">{l.title}</h2>
+        {l.link?.includes('/expose/') && (
+          <p className="card-expose-id">ID: {l.link.split('/expose/')[1]}</p>
+        )}
         {l.address && (
           <p className="card-address">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="addr-icon"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 1 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
@@ -142,6 +148,20 @@ const ListingCard = memo(function ListingCard({ listing: l, onSeen, onFavorite, 
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="date-icon"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
               <span className="card-date-label">Inserent:</span>
               <span>{l.publisher}</span>
+            </span>
+          )}
+          {l.first_seen && (
+            <span className="card-date card-date--scraped" title={new Date(l.first_seen).toLocaleString('de-DE')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="date-icon"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <span className="card-date-label">Entdeckt:</span>
+              <span>{firstSeenLabel}</span>
+            </span>
+          )}
+          {seenMultipleTimes && (
+            <span className="card-date card-date--scraped" title={new Date(l.last_seen).toLocaleString('de-DE')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="date-icon"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              <span className="card-date-label">Zuletzt gesehen:</span>
+              <span>{lastSeenLabel}</span>
             </span>
           )}
         </div>

@@ -3,12 +3,12 @@ import { TABS, LISTING_TYPE_LABELS, PROVIDER_LABELS } from '../constants.js';
 export default function FilterBar({
   activeTab, stats, listingTypeFilter,
   searchQuery, minPrice, maxPrice, minSize, minRooms,
-  publisherFilter, providerFilter, providers, showProviderFilter,
+  publisherFilter, providerFilter, providers, showProviderFilter, showListingTypeFilter = true,
   tabCounts,
   maxAvailableFrom,
   onTabChange, onListingTypeChange, onSearch, onMinPrice, onMaxPrice, onMinSize, onMinRooms, onPublisherFilter, onProviderFilter, onMaxAvailableFrom, onReset,
 }) {
-  const hasFilters = searchQuery || minPrice || maxPrice || minSize || minRooms || publisherFilter || maxAvailableFrom || (showProviderFilter && providerFilter);
+  const hasFilters = searchQuery || minPrice || maxPrice || minSize || minRooms || publisherFilter || maxAvailableFrom || (showProviderFilter && providerFilter) || (showListingTypeFilter && listingTypeFilter);
 
   const tabs = [
     { id: TABS.ALL, label: 'Alle', count: stats.total, icon: (
@@ -48,9 +48,11 @@ export default function FilterBar({
       </nav>
 
       <div className="filter-controls">
-        <select className="filter-select" value={listingTypeFilter} onChange={(e) => onListingTypeChange(e.target.value)}>
-          {typeOptions.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-        </select>
+        {showListingTypeFilter && (
+          <select className="filter-select" value={listingTypeFilter} onChange={(e) => onListingTypeChange(e.target.value)}>
+            {typeOptions.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+          </select>
+        )}
 
         {showProviderFilter && (
           <select className="filter-select" value={providerFilter} onChange={(e) => onProviderFilter(e.target.value)}>

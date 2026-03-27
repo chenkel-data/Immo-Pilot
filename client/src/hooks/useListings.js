@@ -82,11 +82,16 @@ export function useListings(showToast) {
     setListings((prev) => prev.map((l) => (l.id === id ? { ...l, is_seen: willBeSeen ? 1 : 0 } : l)));
     const delta = willBeSeen ? -1 : 1;
     setStats((prev) => ({ ...prev, unseen: Math.max(0, (prev.unseen ?? 0) + delta) }));
-    if (current.search_config_id != null) {
+    const agentIds = current.agent_ids || [];
+    if (agentIds.length > 0) {
       setConfigStats((prev) => {
-        const existing = prev[current.search_config_id];
-        if (!existing) return prev;
-        return { ...prev, [current.search_config_id]: { ...existing, unseen: Math.max(0, (existing.unseen ?? 0) + delta) } };
+        const next = { ...prev };
+        for (const configId of agentIds) {
+          const existing = next[configId];
+          if (!existing) continue;
+          next[configId] = { ...existing, unseen: Math.max(0, (existing.unseen ?? 0) + delta) };
+        }
+        return next;
       });
     }
   }, [listings]);
@@ -175,7 +180,7 @@ export function useListings(showToast) {
   const handleClearFavoritesByConfig = useCallback(async (configId, loadParams = {}) => {
     await api.listings.clearFavoritesByConfig(configId);
     setListings((prev) => prev.map((l) =>
-      l.search_config_id === configId ? { ...l, is_favorite: 0 } : l
+      (l.agent_ids || []).includes(configId) ? { ...l, is_favorite: 0 } : l
     ));
     await refreshStats();
     showToast?.('Favoriten dieses Agenten entfernt.', 'info');
@@ -191,7 +196,7 @@ export function useListings(showToast) {
   const handleClearBlacklistByConfig = useCallback(async (configId) => {
     await api.listings.clearBlacklistByConfig(configId);
     setListings((prev) => prev.map((l) => (
-      l.search_config_id === configId && l.is_blacklisted
+      (l.agent_ids || []).includes(configId) && l.is_blacklisted
         ? { ...l, is_blacklisted: 0 }
         : l
     )));

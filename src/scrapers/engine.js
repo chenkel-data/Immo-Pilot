@@ -72,6 +72,8 @@ export async function crawl(sourceConfig, opts = {}) {
   const maxPages = sourceConfig.maxPages ?? 5;
   const signal = opts.signal;
   const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : null;
+  const knownIds = opts.knownIds || new Set();
+  const EARLY_STOP_THRESHOLD = 3; // stop after N consecutive pages with no new listings
 
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
@@ -88,6 +90,7 @@ export async function crawl(sourceConfig, opts = {}) {
   // Duplicate detection: track listing IDs from the previous page
   let prevPageIds = new Set();
   let duplicatePageCount = 0;
+  let consecutiveKnownPages = 0;
 
   try {
     let currentUrl = sourceConfig.url;
@@ -161,6 +164,25 @@ export async function crawl(sourceConfig, opts = {}) {
       }
 
       allListings.push(...pageListings);
+
+      // Early-stop: if all listings on this page are already known, count toward threshold.
+      if (knownIds.size > 0 && pageListings.length > 0) {
+        const newOnPage = pageListings.filter((l) => !knownIds.has(l.id)).length;
+        if (newOnPage === 0) {
+          consecutiveKnownPages++;
+          console.log(
+            `[engine] Page ${pageNum}: 0 new listings (${consecutiveKnownPages}/${EARLY_STOP_THRESHOLD} to stop)`,
+          );
+          if (consecutiveKnownPages >= EARLY_STOP_THRESHOLD) {
+            console.log(
+              `[engine] ⚡ Cache stop: ${EARLY_STOP_THRESHOLD} consecutive pages with no new listings – skipping remaining pages.`,
+            );
+            break;
+          }
+        } else {
+          consecutiveKnownPages = 0;
+        }
+      }
 
       // Report progress (completed pages)
       try {
