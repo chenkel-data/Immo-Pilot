@@ -68,6 +68,14 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(listing_id)
   );
+
+  CREATE TABLE IF NOT EXISTS listing_agents (
+    listing_id       TEXT NOT NULL,
+    search_config_id INTEGER NOT NULL,
+    PRIMARY KEY (listing_id, search_config_id),
+    FOREIGN KEY (listing_id) REFERENCES listings(id) ON DELETE CASCADE,
+    FOREIGN KEY (search_config_id) REFERENCES search_configs(id) ON DELETE CASCADE
+  );
 `);
 
 // ── Migrations for existing DBs ───────────────────────────────────────────
@@ -102,9 +110,33 @@ safeAlter('ALTER TABLE search_configs DROP COLUMN radius');
 safeAlter('ALTER TABLE listings ADD COLUMN blacklisted_at TEXT');
 safeAlter('ALTER TABLE listings ADD COLUMN available_from TEXT');
 safeAlter('ALTER TABLE listings ADD COLUMN favorited_at TEXT');
+safeAlter('ALTER TABLE listings ADD COLUMN scrape_rank INTEGER');
+
+// listing_agents per-agent rank (sort order of provider)
+safeAlter('ALTER TABLE listing_agents ADD COLUMN scrape_rank INTEGER');
+
+// per-agent: tracks which scrape run last actively scraped this listing (for partition sort)
+safeAlter('ALTER TABLE listing_agents ADD COLUMN last_scraped_run_id INTEGER');
 
 // Index for fast link-based deduplication
 db.exec('CREATE INDEX IF NOT EXISTS idx_listings_link ON listings(link)');
+
+// Index for fast agent lookups on the junction table
+db.exec('CREATE INDEX IF NOT EXISTS idx_listing_agents_config ON listing_agents(search_config_id)');
+
+// Migration: populate listing_agents from existing search_config_id values
+{
+  const result = db
+    .prepare(
+      `INSERT OR IGNORE INTO listing_agents (listing_id, search_config_id)
+       SELECT id, search_config_id FROM listings
+       WHERE search_config_id IS NOT NULL
+         AND search_config_id IN (SELECT id FROM search_configs)`,
+    )
+    .run();
+  if (result.changes > 0)
+    console.log(`[db] ${result.changes} listing-agent link(s) migrated to listing_agents table.`);
+}
 
 // Migration: set search_config_id = NULL for orphaned listings (deleted agents)
 {
@@ -210,12 +242,14 @@ export function updateSearchConfig(id, data) {
 }
 
 export function deleteSearchConfig(id) {
-  // Detach favorited & blacklisted listings – they survive agent deletion
+  // Remove junction entries for this agent
+  db.prepare('DELETE FROM listing_agents WHERE search_config_id = ?').run(id);
+  // Delete listings with no remaining agent associations and not pinned
   db.prepare(
-    'UPDATE listings SET search_config_id = NULL WHERE search_config_id = ? AND (is_favorite = 1 OR is_blacklisted = 1)',
-  ).run(id);
-  // Delete remaining listings for this agent
-  db.prepare('DELETE FROM listings WHERE search_config_id = ?').run(id);
+    `DELETE FROM listings
+     WHERE is_favorite = 0 AND is_blacklisted = 0
+       AND id NOT IN (SELECT listing_id FROM listing_agents)`,
+  ).run();
   // Delete scrape run history for this agent
   db.prepare('DELETE FROM scrape_runs WHERE search_config_id = ?').run(id);
   // Delete the config itself
@@ -261,7 +295,9 @@ export function clearAllFavorites() {
 
 export function clearFavoritesByConfig(searchConfigId) {
   db.prepare(
-    'UPDATE listings SET is_favorite = 0, favorited_at = NULL WHERE search_config_id = ? AND is_favorite = 1',
+    `UPDATE listings SET is_favorite = 0, favorited_at = NULL
+     WHERE is_favorite = 1
+       AND id IN (SELECT listing_id FROM listing_agents WHERE search_config_id = ?)`,
   ).run(searchConfigId);
 }
 
@@ -272,14 +308,14 @@ export function clearAllBlacklist() {
 
 export function clearBlacklistByConfig(searchConfigId) {
   db.prepare(
-    `
-    DELETE FROM blacklist WHERE listing_id IN (
-      SELECT id FROM listings WHERE search_config_id = ?
-    )
-  `,
+    `DELETE FROM blacklist WHERE listing_id IN (
+       SELECT listing_id FROM listing_agents WHERE search_config_id = ?
+     )`,
   ).run(searchConfigId);
   db.prepare(
-    'UPDATE listings SET is_blacklisted = 0 WHERE search_config_id = ? AND is_blacklisted = 1',
+    `UPDATE listings SET is_blacklisted = 0
+     WHERE is_blacklisted = 1
+       AND id IN (SELECT listing_id FROM listing_agents WHERE search_config_id = ?)`,
   ).run(searchConfigId);
 }
 
@@ -310,47 +346,10 @@ export function upsertListing(l) {
   if (l.link && isUrlBlacklisted(l.link)) {
     l.is_blacklisted = 1;
   }
-  // Auto-migration: if the ID schema has changed, identify the existing entry by URL.
-  // Only migrate if the existing entry belongs to the same agent
-  // or is an unpinned orphan (no favorite, no blacklist entry).
-  // Listings from other agents (favorited/blacklisted by another agent) remain
-  // untouched – no cross-agent carry-over.
-  let carrySeen = 0,
-    carryFav = 0,
-    carryFirstSeen = null;
-  if (l.link) {
-    const existingByLink = db.prepare('SELECT * FROM listings WHERE link = ? LIMIT 1').get(l.link);
-    if (existingByLink && existingByLink.id !== l.id) {
-      const isSameAgent = existingByLink.search_config_id === l.search_config_id;
-      const isSafeOrphan =
-        existingByLink.search_config_id == null &&
-        !existingByLink.is_favorite &&
-        !existingByLink.is_blacklisted;
-      if (isSameAgent || isSafeOrphan) {
-        // Same agent or unpinned orphan → carry over flags, replace old entry
-        carrySeen = existingByLink.is_seen ?? 0;
-        carryFav = existingByLink.is_favorite ?? 0;
-        carryFirstSeen = existingByLink.first_seen ?? null;
-        try {
-          db.prepare('UPDATE blacklist SET listing_id = ? WHERE listing_id = ?').run(
-            l.id,
-            existingByLink.id,
-          );
-        } catch {}
-        try {
-          db.prepare('UPDATE blacklist SET listing_id = ? WHERE url = ?').run(l.id, l.link);
-        } catch {}
-        try {
-          db.prepare('DELETE FROM listings WHERE id = ?').run(existingByLink.id);
-        } catch {}
-      }
-      // Otherwise (different agent with a pinned entry): leave the old entry untouched,
-      // the new listing will be inserted normally for the current agent.
-    }
-  }
+
   db.prepare(
     `
-    INSERT INTO listings (id, source, provider, listing_type, search_config_id, title, price, size, rooms, address, description, publisher, link, image, is_blacklisted, listed_at, available_from, first_seen, last_seen)
+    INSERT INTO listings (id, source, provider, listing_type, title, price, size, rooms, address, description, publisher, link, image, is_blacklisted, listed_at, available_from, first_seen, last_seen, scrape_rank)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       price           = excluded.price,
@@ -363,14 +362,13 @@ export function upsertListing(l) {
       listed_at       = COALESCE(excluded.listed_at, listed_at),
       available_from  = COALESCE(excluded.available_from, available_from),
       last_seen       = excluded.last_seen,
-      search_config_id = COALESCE(search_config_id, excluded.search_config_id)
+      scrape_rank     = excluded.scrape_rank
   `,
   ).run(
     l.id,
     l.source ?? l.provider ?? 'kleinanzeigen',
     l.provider ?? 'kleinanzeigen',
     l.listing_type ?? 'miete',
-    l.search_config_id ?? null,
     l.title,
     l.price ?? null,
     l.size ?? null,
@@ -383,16 +381,21 @@ export function upsertListing(l) {
     l.is_blacklisted ?? 0,
     l.listed_at ?? null,
     l.available_from ?? null,
-    carryFirstSeen && (!l.first_seen || carryFirstSeen < l.first_seen)
-      ? carryFirstSeen
-      : l.first_seen,
+    l.first_seen,
     l.last_seen,
+    l.scrape_rank ?? null,
   );
 
-  if (carrySeen || carryFav) {
+  // Create/update junction entry for the agent that scraped this listing,
+  // storing the per-agent scrape_rank so each agent has its own sort order (and does not overwrite others for shared listings).
+  if (l.search_config_id) {
     db.prepare(
-      'UPDATE listings SET is_seen = COALESCE(?, is_seen), is_favorite = COALESCE(?, is_favorite) WHERE id = ?',
-    ).run(carrySeen ? 1 : null, carryFav ? 1 : null, l.id);
+      `INSERT INTO listing_agents (listing_id, search_config_id, scrape_rank, last_scraped_run_id)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(listing_id, search_config_id) DO UPDATE SET
+         scrape_rank = excluded.scrape_rank,
+         last_scraped_run_id = excluded.last_scraped_run_id`,
+    ).run(l.id, l.search_config_id, l.scrape_rank ?? null, l.run_id ?? null);
   }
 }
 
@@ -443,39 +446,72 @@ export function getListings({
 } = {}) {
   const conditions = [];
   const params = [];
+  let joinClause = '';
 
-  if (onlyUnseen) conditions.push('is_seen = 0');
-  if (onlyFavorites) conditions.push('is_favorite = 1');
-  if (showBlacklisted) conditions.push('is_blacklisted = 1');
-  else if (!includeBlacklisted && hideBlacklisted) conditions.push('is_blacklisted = 0');
+  // Filter by agent via junction table
+  if (searchConfigId) {
+    joinClause = 'INNER JOIN listing_agents la ON la.listing_id = l.id AND la.search_config_id = ?';
+    params.push(searchConfigId);
+  }
+
+  if (onlyUnseen) conditions.push('l.is_seen = 0');
+  if (onlyFavorites) conditions.push('l.is_favorite = 1');
+  if (showBlacklisted) conditions.push('l.is_blacklisted = 1');
+  else if (!includeBlacklisted && hideBlacklisted) conditions.push('l.is_blacklisted = 0');
   if (listingType) {
-    conditions.push('listing_type = ?');
+    conditions.push('l.listing_type = ?');
     params.push(listingType);
   }
   if (provider) {
-    conditions.push('provider = ?');
+    conditions.push('l.provider = ?');
     params.push(provider);
-  }
-  if (searchConfigId) {
-    conditions.push('search_config_id = ?');
-    params.push(searchConfigId);
   }
 
   for (const term of blacklistKeywords) {
     conditions.push(
-      "(LOWER(COALESCE(title,'')) NOT LIKE LOWER(?) AND LOWER(COALESCE(description,'')) NOT LIKE LOWER(?) AND LOWER(COALESCE(publisher,'')) NOT LIKE LOWER(?))",
+      "(LOWER(COALESCE(l.title,'')) NOT LIKE LOWER(?) AND LOWER(COALESCE(l.description,'')) NOT LIKE LOWER(?) AND LOWER(COALESCE(l.publisher,'')) NOT LIKE LOWER(?))",
     );
     params.push(`%${term}%`, `%${term}%`, `%${term}%`);
   }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-  return db.prepare(`SELECT * FROM listings ${where} ORDER BY first_seen DESC`).all(...params);
+
+  // When filtering by a specific agent, sort by newest run first, then by provider rank within that run
+  let orderBy;
+  if (searchConfigId) {
+    orderBy = 'la.last_scraped_run_id DESC NULLS LAST, la.scrape_rank ASC NULLS LAST';
+  } else {
+    orderBy = 'l.scrape_rank ASC NULLS LAST';
+  }
+
+  const sql = `
+    SELECT l.*,
+      (SELECT GROUP_CONCAT(la2.search_config_id) FROM listing_agents la2 WHERE la2.listing_id = l.id) as agent_ids
+    FROM listings l
+    ${joinClause}
+    ${where}
+    ORDER BY ${orderBy}
+  `;
+  const rows = db.prepare(sql).all(...params);
+  return rows.map((r) => ({
+    ...r,
+    agent_ids: r.agent_ids ? r.agent_ids.split(',').map(Number) : [],
+  }));
 }
 
 export function getListingById(id) {
-  return db.prepare('SELECT * FROM listings WHERE id = ?').get(id);
+  const row = db
+    .prepare(
+      `SELECT l.*,
+        (SELECT GROUP_CONCAT(la.search_config_id) FROM listing_agents la WHERE la.listing_id = l.id) as agent_ids
+       FROM listings l WHERE l.id = ?`,
+    )
+    .get(id);
+  if (!row) return null;
+  return { ...row, agent_ids: row.agent_ids ? row.agent_ids.split(',').map(Number) : [] };
 }
 
 export function resetAll() {
+  db.exec('DELETE FROM listing_agents');
   db.exec('DELETE FROM listings');
   db.exec('DELETE FROM scrape_runs');
   db.exec('DELETE FROM blacklist');
@@ -488,12 +524,44 @@ export function purgeListingsKeepPinned() {
 }
 
 export function purgeListingsByConfig(searchConfigId) {
+  // Remove junction for non-pinned listings of this agent
   db.prepare(
-    'DELETE FROM listings WHERE search_config_id = ? AND is_favorite = 0 AND is_blacklisted = 0',
+    `DELETE FROM listing_agents
+     WHERE search_config_id = ?
+       AND listing_id IN (
+         SELECT id FROM listings WHERE is_favorite = 0 AND is_blacklisted = 0
+       )`,
   ).run(searchConfigId);
+  // Delete listings with no remaining agent associations and not pinned
+  db.prepare(
+    `DELETE FROM listings
+     WHERE is_favorite = 0 AND is_blacklisted = 0
+       AND id NOT IN (SELECT listing_id FROM listing_agents)`,
+  ).run();
 }
 
 export function getExistingIds(provider, listingType, searchConfigId = null) {
+  if (searchConfigId) {
+    // Use junction table for agent-specific lookup
+    const conditions = ['la.search_config_id = ?'];
+    const params = [searchConfigId];
+    if (provider) {
+      conditions.push('l.provider = ?');
+      params.push(provider);
+    }
+    if (listingType) {
+      conditions.push('l.listing_type = ?');
+      params.push(listingType);
+    }
+    return db
+      .prepare(
+        `SELECT l.id FROM listings l
+         INNER JOIN listing_agents la ON la.listing_id = l.id
+         WHERE ${conditions.join(' AND ')}`,
+      )
+      .all(...params)
+      .map((r) => r.id);
+  }
   const conditions = [];
   const params = [];
   if (provider) {
@@ -504,10 +572,6 @@ export function getExistingIds(provider, listingType, searchConfigId = null) {
     conditions.push('listing_type = ?');
     params.push(listingType);
   }
-  if (searchConfigId) {
-    conditions.push('search_config_id = ?');
-    params.push(searchConfigId);
-  }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   return db
     .prepare(`SELECT id FROM listings ${where}`)
@@ -515,35 +579,41 @@ export function getExistingIds(provider, listingType, searchConfigId = null) {
     .map((r) => r.id);
 }
 
+/** Returns all known listing IDs for a provider (any agent). Used for scrape caching. */
+export function getAllKnownIds(provider) {
+  return db
+    .prepare('SELECT id FROM listings WHERE provider = ?')
+    .all(provider)
+    .map((r) => r.id);
+}
+
 export function getStatsPerConfig() {
   return db
     .prepare(
-      `
-    SELECT
-      search_config_id,
-      SUM(CASE WHEN is_blacklisted = 0 THEN 1 ELSE 0 END) as total,
-      SUM(CASE WHEN is_blacklisted = 0 AND is_seen = 0 THEN 1 ELSE 0 END) as unseen,
-      SUM(CASE WHEN is_favorite = 1 AND is_blacklisted = 0 THEN 1 ELSE 0 END) as favorites,
-      SUM(CASE WHEN is_blacklisted = 1 THEN 1 ELSE 0 END) as blacklisted
-    FROM listings
-    GROUP BY search_config_id
-  `,
+      `SELECT
+        la.search_config_id,
+        SUM(CASE WHEN l.is_blacklisted = 0 THEN 1 ELSE 0 END) as total,
+        SUM(CASE WHEN l.is_blacklisted = 0 AND l.is_seen = 0 THEN 1 ELSE 0 END) as unseen,
+        SUM(CASE WHEN l.is_favorite = 1 AND l.is_blacklisted = 0 THEN 1 ELSE 0 END) as favorites,
+        SUM(CASE WHEN l.is_blacklisted = 1 THEN 1 ELSE 0 END) as blacklisted
+      FROM listing_agents la
+      INNER JOIN listings l ON l.id = la.listing_id
+      GROUP BY la.search_config_id`,
     )
     .all();
 }
 
-// Stats for detached listings (search_config_id IS NULL) – favorites of deleted agents
+// Stats for detached listings (no agent associations) – favorites of deleted agents
 export function getOrphanStats() {
   const row = db
     .prepare(
-      `
-    SELECT
-      COUNT(*) as total,
-      SUM(CASE WHEN is_seen = 0 THEN 1 ELSE 0 END) as unseen,
-      SUM(CASE WHEN is_favorite = 1 THEN 1 ELSE 0 END) as favorites
-    FROM listings
-    WHERE search_config_id IS NULL AND is_blacklisted = 0
-  `,
+      `SELECT
+        COUNT(*) as total,
+        SUM(CASE WHEN is_seen = 0 THEN 1 ELSE 0 END) as unseen,
+        SUM(CASE WHEN is_favorite = 1 THEN 1 ELSE 0 END) as favorites
+      FROM listings
+      WHERE id NOT IN (SELECT listing_id FROM listing_agents)
+        AND is_blacklisted = 0`,
     )
     .get();
   return { total: row?.total ?? 0, unseen: row?.unseen ?? 0, favorites: row?.favorites ?? 0 };

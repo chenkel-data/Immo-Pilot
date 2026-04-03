@@ -58,20 +58,33 @@ export async function runScrapeForConfig(searchConfig, hooks = {}) {
   const startedAt = Date.now();
 
   try {
-    // Use the appropriate engine based on the provider
-    const listings = usesCustomScraper
-      ? await provider.scrape(url, maxPages, { signal: hooks.signal, onProgress: hooks.onProgress })
-      : await crawl(crawlConfig, { signal: hooks.signal, onProgress: hooks.onProgress });
-    console.log(`[scraper] ${listings.length} listings found.`);
-
-    const existingIds = new Set(
+    // Build agent-specific known IDs for early-stop caching and new-listing detection.
+    const knownIds = new Set(
       getExistingIds(searchConfig.provider, searchConfig.listing_type, searchConfig.id),
     );
+
+    // Use the appropriate engine based on the provider
+    const listings = usesCustomScraper
+      ? await provider.scrape(url, maxPages, {
+          signal: hooks.signal,
+          onProgress: hooks.onProgress,
+          knownIds,
+        })
+      : await crawl(crawlConfig, {
+          signal: hooks.signal,
+          onProgress: hooks.onProgress,
+          knownIds,
+        });
+    console.log(`[scraper] ${listings.length} listings found.`);
+
+    // Re-use knownIds (built before scraping) – no DB writes happened during scrape
+    const existingIds = knownIds;
     const scrapedIds = new Set();
     let newCount = 0;
     const scrapeTime = now(); // uniform timestamp for all listings in this run
 
-    for (const listing of listings) {
+    for (let i = 0; i < listings.length; i++) {
+      const listing = listings[i];
       const isNew = !existingIds.has(listing.id);
       if (isNew) newCount++;
 
@@ -94,6 +107,8 @@ export async function runScrapeForConfig(searchConfig, hooks = {}) {
         available_from: listing.availableFrom ?? null,
         first_seen: scrapeTime,
         last_seen: scrapeTime,
+        scrape_rank: i + 1,
+        run_id: runId,
       });
 
       scrapedIds.add(listing.id);

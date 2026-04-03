@@ -313,7 +313,7 @@ function collectListingsFromResponse(payload) {
  *
  * @param {string} inputUrl        – Web URL or mobile API URL
  * @param {number} maxPages        – Maximum number of pages
- * @param {{ signal?: AbortSignal, onProgress?: Function }} opts
+ * @param {{ signal?: AbortSignal, onProgress?: Function, knownIds?: Set }} opts
  * @returns {Promise<object[]>}    – Normalized listings
  */
 export async function scrape(inputUrl, maxPages = 10, opts = {}) {
@@ -331,7 +331,8 @@ export async function scrape(inputUrl, maxPages = 10, opts = {}) {
  * @returns {Promise<{ mobileUrl: string, hitCount: number|string, pageCount: number, targetPages: number, pages: Array<{ pageNum: number, listings: object[] }> }>}
  */
 export async function scrapePages(inputUrl, maxPages = 10, opts = {}) {
-  const { signal, onProgress, log = console.log } = opts;
+  const { signal, onProgress, knownIds = new Set(), log = console.log } = opts;
+  const EARLY_STOP_THRESHOLD = 3; // stop after N consecutive pages with no new listings
 
   // Detect if already an API URL
   const isApiEndpoint = inputUrl.includes('api.mobile.immobilienscout24.de');
@@ -362,17 +363,46 @@ export async function scrapePages(inputUrl, maxPages = 10, opts = {}) {
   pages.push({ pageNum: 1, ...collectListingsFromResponse(firstPage) });
   onProgress?.({ pageNum: 1, maxPages: targetPages });
 
+  // Early-stop tracking: count consecutive pages with 0 new listings.
+  let consecutiveKnownPages = 0;
+  if (knownIds.size > 0 && pages[0].listings.length > 0) {
+    const newOnFirst = pages[0].listings.filter((l) => !knownIds.has(l.id)).length;
+    if (newOnFirst === 0) consecutiveKnownPages++;
+  }
+
   for (let p = 2; p <= targetPages; p++) {
     if (signal?.aborted) {
       log(`[immoscout24] Abbruch nach Seite ${p - 1}`);
       break;
     }
 
+    // Early stop: skip remaining pages if N consecutive pages had no new listings
+    if (knownIds.size > 0 && consecutiveKnownPages >= EARLY_STOP_THRESHOLD) {
+      log(
+        `[immoscout24] ⚡ Cache-Stopp: ${EARLY_STOP_THRESHOLD} Seiten ohne neue Inserate – überspringe Seiten ${p}–${targetPages}.`,
+      );
+      break;
+    }
+
     await sleep(600 + Math.random() * 600);
 
     const pageData = await requestPage(apiBase, p, log);
-    pages.push({ pageNum: p, ...collectListingsFromResponse(pageData) });
+    const pageResult = collectListingsFromResponse(pageData);
+    pages.push({ pageNum: p, ...pageResult });
     onProgress?.({ pageNum: p, maxPages: targetPages });
+
+    // Track new-vs-known for early stop
+    if (knownIds.size > 0 && pageResult.listings.length > 0) {
+      const newOnPage = pageResult.listings.filter((l) => !knownIds.has(l.id)).length;
+      if (newOnPage === 0) {
+        consecutiveKnownPages++;
+        log(
+          `[immoscout24] Seite ${p}: 0 neue Inserate (${consecutiveKnownPages}/${EARLY_STOP_THRESHOLD} zum Stopp)`,
+        );
+      } else {
+        consecutiveKnownPages = 0;
+      }
+    }
   }
 
   const results = pages.flatMap((p) => p.listings);

@@ -18,21 +18,6 @@ import { api } from './api.js';
 import { TABS, ITEMS_PER_PAGE, LISTING_TYPE_LABELS, LISTING_TYPE_COLORS, PROVIDER_COLORS, PROVIDER_LABELS } from './constants.js';
 
 const FILTERS_STORAGE_KEY = 'immo.filters.v1';
-const EMPTY_STATS = { total: 0, unseen: 0, favorites: 0, blacklisted: 0 };
-
-function buildStatsFromListings(list) {
-  const stats = { ...EMPTY_STATS };
-  for (const listing of list) {
-    if (listing.is_blacklisted) {
-      stats.blacklisted += 1;
-      continue;
-    }
-    stats.total += 1;
-    if (!listing.is_seen) stats.unseen += 1;
-    if (listing.is_favorite) stats.favorites += 1;
-  }
-  return stats;
-}
 
 function readPersistedFilters() {
   const defaults = {
@@ -69,7 +54,7 @@ export default function App() {
   }, []);
 
   const {
-    listings, loading, orphanStats,
+    listings, loading, stats, orphanStats, configStats,
     loadListings, loadStats, loadConfigStats,
     handleSeen, handleFavorite, handleBlacklist, handleUnblacklist,
     handleMarkAllSeen, handleReset, handleResetConfig,
@@ -142,19 +127,24 @@ export default function App() {
   /* config selection handler – always resets tab to ALL when switching */
   const handleSelectConfig = useCallback((configId) => {
     setActiveConfigId(configId ?? null);
-    currentListingParamsRef.current = { include_blacklisted: true };
+    const params = { include_blacklisted: true };
+    if (configId) params.search_config_id = configId;
+    currentListingParamsRef.current = params;
+    loadListings(params);
     setActiveTab(TABS.ALL);
     setPage(1);
-  }, []);
+  }, [loadListings]);
 
   /* navigate home: deselect agent, reset to unseen tab */
   const handleNavigateHome = useCallback(() => {
     setActiveConfigId(null);
-    currentListingParamsRef.current = { include_blacklisted: true };
+    const params = { include_blacklisted: true };
+    currentListingParamsRef.current = params;
+    loadListings(params);
     setActiveTab(TABS.UNSEEN);
     setPage(1);
     setSearchQuery(''); setMinPrice(''); setMaxPrice(''); setMinSize(''); setMinRooms(''); setListingTypeFilter(''); setProviderFilter(''); setPublisherFilter(''); setMaxAvailableFrom('');
-  }, []);
+  }, [loadListings]);
 
   const isProviderFilterActive = !activeConfigId && activeTab === TABS.ALL;
 
@@ -183,10 +173,9 @@ export default function App() {
   }, [listings, listingTypeFilter, publisherFilter, searchQuery, minPrice, maxPrice, minSize, minRooms, maxAvailableFrom, scrapeConfig]);
 
   const filteredBase = useMemo(() => {
-    if (activeConfigId) return uiFilteredListings.filter(l => l.search_config_id === activeConfigId);
     if (isProviderFilterActive && providerFilter) return uiFilteredListings.filter(l => l.provider === providerFilter);
     return uiFilteredListings;
-  }, [uiFilteredListings, activeConfigId, isProviderFilterActive, providerFilter]);
+  }, [uiFilteredListings, isProviderFilterActive, providerFilter]);
 
   const filtered = useMemo(() => {
     let list = [...filteredBase];
@@ -212,13 +201,17 @@ export default function App() {
   }, [filteredBase, activeTab]);
 
   const tabCounts = useMemo(() => {
+    let base = listings;
+    if (listingTypeFilter) base = base.filter(l => l.listing_type === listingTypeFilter);
+    if (isProviderFilterActive && providerFilter) base = base.filter(l => l.provider === providerFilter);
+    const nonBlacklisted = base.filter(l => !l.is_blacklisted);
     return {
-      [TABS.ALL]: filteredBase.filter(l => !l.is_blacklisted).length,
-      [TABS.UNSEEN]: filteredBase.filter(l => !l.is_blacklisted && !l.is_seen).length,
-      [TABS.FAVORITES]: filteredBase.filter(l => !l.is_blacklisted && l.is_favorite).length,
-      [TABS.BLACKLISTED]: filteredBase.filter(l => l.is_blacklisted).length,
+      [TABS.ALL]: nonBlacklisted.length,
+      [TABS.UNSEEN]: nonBlacklisted.filter(l => !l.is_seen).length,
+      [TABS.FAVORITES]: nonBlacklisted.filter(l => l.is_favorite).length,
+      [TABS.BLACKLISTED]: base.filter(l => l.is_blacklisted).length,
     };
-  }, [filteredBase]);
+  }, [listings, listingTypeFilter, isProviderFilterActive, providerFilter]);
 
   const activeConfigStats = useMemo(() => ({
     total: tabCounts[TABS.ALL],
@@ -226,30 +219,6 @@ export default function App() {
     favorites: tabCounts[TABS.FAVORITES],
     blacklisted: tabCounts[TABS.BLACKLISTED],
   }), [tabCounts]);
-
-  const sidebarConfigStats = useMemo(() => {
-    const map = {};
-    for (const cfg of configs) map[cfg.id] = { ...EMPTY_STATS };
-    for (const listing of uiFilteredListings) {
-      const configId = listing.search_config_id;
-      if (configId == null) continue;
-      if (!map[configId]) map[configId] = { ...EMPTY_STATS };
-      const bucket = map[configId];
-      if (listing.is_blacklisted) {
-        bucket.blacklisted += 1;
-        continue;
-      }
-      bucket.total += 1;
-      if (!listing.is_seen) bucket.unseen += 1;
-      if (listing.is_favorite) bucket.favorites += 1;
-    }
-    return map;
-  }, [configs, uiFilteredListings]);
-
-  const sidebarGlobalStats = useMemo(() => (
-    buildStatsFromListings(uiFilteredListings)
-  ), [uiFilteredListings]);
-
 
   const pages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
   const safePage = Math.min(page, pages);
@@ -301,9 +270,9 @@ export default function App() {
           <AgentSidebar
             configs={configs}
             providers={providers}
-            configStats={sidebarConfigStats}
+            configStats={configStats}
             orphanStats={orphanStats}
-            globalStats={sidebarGlobalStats}
+            globalStats={stats}
             activeConfigId={activeConfigId}
             onSelectConfig={handleSelectConfig}
             onAdd={addConfig}
@@ -430,6 +399,7 @@ export default function App() {
               providerFilter={providerFilter}
               providers={providers}
               showProviderFilter={isProviderFilterActive}
+              showListingTypeFilter={!activeConfigId}
               onTabChange={setActiveTab} onListingTypeChange={setListingTypeFilter}
               onSearch={setSearchQuery} onMinPrice={setMinPrice} onMaxPrice={setMaxPrice} onMinSize={setMinSize} onMinRooms={setMinRooms}
               onPublisherFilter={setPublisherFilter}
@@ -457,7 +427,7 @@ export default function App() {
           onClose={() => setSidebarOpen(false)}
           onReset={() => handleReset(currentListingParamsRef.current)}
           showToast={showToast}
-          onSaved={loadScrapeConfig}
+          onSaved={() => { loadScrapeConfig(); reloadAll(); }}
           onClearFavorites={() =>
             askConfirm({
               title: 'Alle Favoriten löschen?',

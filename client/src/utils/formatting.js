@@ -14,8 +14,7 @@ export function parseNum(str) {
 /**
  * Formats an ISO date as a human-readable relative date (German locale).
  * - < 1h:    "Vor 23 Minuten"
- * - < 12h:   "Vor 3 Stunden"
- * - < 24h:   "Heute, 14:33"
+ * - < 24h:   "Vor 16 Stunden"
  * - Yesterday: "Gestern, 09:12"
  * - Older:   "7. März 2026" (date only, time irrelevant after > 1 day)
  */
@@ -35,17 +34,13 @@ export function formatListingDate(iso) {
     return 'Gerade eben';
   } else if (diffMin < 60) {
     return `Vor ${diffMin} Minute${diffMin === 1 ? '' : 'n'}`;
-  } else if (diffH < 12) {
+  } else if (diffH < 24) {
     return `Vor ${diffH} Stunde${diffH === 1 ? '' : 'n'}`;
   } else {
     const hh = String(date.getHours()).padStart(2, '0');
     const mm = String(date.getMinutes()).padStart(2, '0');
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const yesterdayStart = new Date(todayStart.getTime() - 86400000);
+    const yesterdayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
 
-    if (date >= todayStart) {
-      return `Heute, ${hh}:${mm}`;
-    }
     if (date >= yesterdayStart) {
       return `Gestern, ${hh}:${mm}`;
     }
