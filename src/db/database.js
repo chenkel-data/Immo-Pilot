@@ -122,9 +122,7 @@ safeAlter('ALTER TABLE listing_agents ADD COLUMN last_scraped_run_id INTEGER');
 db.exec('CREATE INDEX IF NOT EXISTS idx_listings_link ON listings(link)');
 
 // Index for fast agent lookups on the junction table
-db.exec(
-  'CREATE INDEX IF NOT EXISTS idx_listing_agents_config ON listing_agents(search_config_id)',
-);
+db.exec('CREATE INDEX IF NOT EXISTS idx_listing_agents_config ON listing_agents(search_config_id)');
 
 // Migration: populate listing_agents from existing search_config_id values
 {
@@ -137,9 +135,7 @@ db.exec(
     )
     .run();
   if (result.changes > 0)
-    console.log(
-      `[db] ${result.changes} listing-agent link(s) migrated to listing_agents table.`,
-    );
+    console.log(`[db] ${result.changes} listing-agent link(s) migrated to listing_agents table.`);
 }
 
 // Migration: set search_config_id = NULL for orphaned listings (deleted agents)
@@ -454,8 +450,7 @@ export function getListings({
 
   // Filter by agent via junction table
   if (searchConfigId) {
-    joinClause =
-      'INNER JOIN listing_agents la ON la.listing_id = l.id AND la.search_config_id = ?';
+    joinClause = 'INNER JOIN listing_agents la ON la.listing_id = l.id AND la.search_config_id = ?';
     params.push(searchConfigId);
   }
 
