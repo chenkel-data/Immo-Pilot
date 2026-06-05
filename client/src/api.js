@@ -33,9 +33,13 @@ async function request(method, path, body) {
 }
 
 function buildQuery(params = {}) {
-  const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '');
+  const entries = Object.entries(params).filter(
+    ([, v]) => v !== undefined && v !== null && v !== '',
+  );
   if (entries.length === 0) return '';
-  return '?' + entries.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+  return (
+    '?' + entries.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&')
+  );
 }
 
 export const api = {
@@ -54,6 +58,8 @@ export const api = {
     markAllSeen: () => api.patch('/api/listings/seen-all'),
     toggleFav: (id) => api.patch(`/api/listings/${id}/favorite`),
     getImages: (id) => api.get(`/api/listings/${id}/images`),
+    getDetails: (id) => api.get(`/api/listings/${id}/details`),
+    refreshDetails: (id) => api.post(`/api/listings/${id}/details/refresh`),
     batchImages: (ids) => api.post('/api/listings/batch-images', { ids }),
     getRuns: () => api.get('/api/listings/runs'),
     reset: () => api.delete('/api/listings/reset'),

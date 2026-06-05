@@ -26,7 +26,15 @@ import {
   clearFavoritesByConfig,
   clearAllBlacklist,
   clearBlacklistByConfig,
+  getListingDetailById,
+  upsertListingDetail,
+  markListingDetailError,
 } from '../db/database.js';
+import { fetchAndParseExposeDetail, getExposeIdFromUrl } from '../providers/immoscout24/detail.js';
+import {
+  fetchAndParseKleinanzeigenDetail,
+  getAdIdFromUrl,
+} from '../providers/kleinanzeigen/detail.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = path.join(__dirname, '..', '..', 'config', 'default.json');
@@ -48,6 +56,43 @@ function countStats(rows) {
 }
 
 const router = Router();
+
+function serializeDetail(detail, includeRaw = false) {
+  if (!detail) return null;
+  if (includeRaw) return detail;
+  const serialized = { ...detail };
+  delete serialized.raw_detail_json;
+  return serialized;
+}
+
+async function refreshListingDetail(listing) {
+  let fetchDetail;
+  let exposeId;
+
+  if (listing.provider === 'immoscout24') {
+    fetchDetail = fetchAndParseExposeDetail;
+    exposeId = getExposeIdFromUrl(listing.link);
+  } else if (listing.provider === 'kleinanzeigen') {
+    fetchDetail = fetchAndParseKleinanzeigenDetail;
+    exposeId = getAdIdFromUrl(listing.link);
+  } else {
+    throw new Error(`Detailabruf ist aktuell nicht für ${listing.provider} verfügbar`);
+  }
+
+  try {
+    const detail = await fetchDetail(listing);
+    upsertListingDetail(detail);
+    return getListingDetailById(listing.id);
+  } catch (err) {
+    markListingDetailError({
+      listingId: listing.id,
+      provider: listing.provider,
+      exposeId,
+      error: err.message,
+    });
+    throw err;
+  }
+}
 
 // DELETE /api/listings/clear-favorites  – resets all favorites
 router.delete(
@@ -314,6 +359,43 @@ router.post(
 
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, () => worker()));
     res.json({ results });
+  }),
+);
+
+// GET /api/listings/:id/details
+router.get(
+  '/:id/details',
+  asyncHandler(async (req, res) => {
+    const listing = getListingById(req.params.id);
+    if (!listing) return res.status(404).json({ error: 'Listing not found' });
+
+    let detail = getListingDetailById(listing.id);
+    let detailError = detail?.status === 'error' ? detail.error : null;
+    if (!detail && ['immoscout24', 'kleinanzeigen'].includes(listing.provider)) {
+      try {
+        detail = await refreshListingDetail(listing);
+      } catch (err) {
+        detailError = err.message;
+        detail = getListingDetailById(listing.id);
+      }
+    }
+
+    res.json({
+      listing,
+      detail: serializeDetail(detail, req.query.raw === 'true'),
+      detail_error: detailError,
+    });
+  }),
+);
+
+// POST /api/listings/:id/details/refresh
+router.post(
+  '/:id/details/refresh',
+  asyncHandler(async (req, res) => {
+    const listing = getListingById(req.params.id);
+    if (!listing) return res.status(404).json({ error: 'Listing not found' });
+    const detail = await refreshListingDetail(listing);
+    res.json({ listing: getListingById(listing.id), detail: serializeDetail(detail) });
   }),
 );
 
