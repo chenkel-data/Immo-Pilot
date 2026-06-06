@@ -3,6 +3,7 @@ import Header from './components/Header.jsx';
 import AgentSidebar from './components/AgentSidebar.jsx';
 import FilterBar from './components/FilterBar.jsx';
 import ListingsGrid from './components/ListingsGrid.jsx';
+import ListingDetailDrawer from './components/ListingDetailDrawer.jsx';
 import ScrapeLog from './components/ScrapeLog.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import Toast from './components/Toast.jsx';
@@ -15,7 +16,14 @@ import { useToast } from './hooks/useToast.js';
 import { useSearchConfigs } from './hooks/useSearchConfigs.js';
 import { parseNum } from './utils/formatting.js';
 import { api } from './api.js';
-import { TABS, ITEMS_PER_PAGE, LISTING_TYPE_LABELS, LISTING_TYPE_COLORS, PROVIDER_COLORS, PROVIDER_LABELS } from './constants.js';
+import {
+  TABS,
+  ITEMS_PER_PAGE,
+  LISTING_TYPE_LABELS,
+  LISTING_TYPE_COLORS,
+  PROVIDER_COLORS,
+  PROVIDER_LABELS,
+} from './constants.js';
 
 const FILTERS_STORAGE_KEY = 'immo.filters.v1';
 
@@ -50,19 +58,44 @@ export default function App() {
     try {
       const cfg = await api.scrape.getConfig();
       setScrapeConfig(cfg ?? { blacklistKeywords: [] });
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   const {
-    listings, loading, stats, orphanStats, configStats,
-    loadListings, loadStats, loadConfigStats,
-    handleSeen, handleFavorite, handleBlacklist, handleUnblacklist,
-    handleMarkAllSeen, handleReset, handleResetConfig,
-    handleClearFavorites, handleClearFavoritesByConfig,
-    handleClearBlacklist, handleClearBlacklistByConfig,
+    listings,
+    loading,
+    stats,
+    orphanStats,
+    configStats,
+    loadListings,
+    loadStats,
+    loadConfigStats,
+    handleSeen,
+    handleMarkSeen,
+    handleFavorite,
+    handleBlacklist,
+    handleUnblacklist,
+    handleMarkAllSeen,
+    handleReset,
+    handleResetConfig,
+    handleClearFavorites,
+    handleClearFavoritesByConfig,
+    handleClearBlacklist,
+    handleClearBlacklistByConfig,
   } = useListings(showToast);
   const { runs, loadRuns } = useRuns();
-  const { configs, providers, loadConfigs, loadProviders, addConfig, editConfig, removeConfig, toggleConfig } = useSearchConfigs(showToast);
+  const {
+    configs,
+    providers,
+    loadConfigs,
+    loadProviders,
+    addConfig,
+    editConfig,
+    removeConfig,
+    toggleConfig,
+  } = useSearchConfigs(showToast);
 
   const currentListingParamsRef = useRef({ include_blacklisted: true });
 
@@ -73,13 +106,17 @@ export default function App() {
     loadConfigStats();
     loadRuns();
   }, [loadListings, loadStats, loadConfigStats, loadRuns]);
-  const { scraping, scrapeProgress, startScraping, startScrapingConfig, stopScraping, cleanup } = useScraper(showToast, reloadAll);
+  const { scraping, scrapeProgress, startScraping, startScrapingConfig, stopScraping, cleanup } =
+    useScraper(showToast, reloadAll);
 
   /* confirm dialog state */
   const [confirmDialog, setConfirmDialog] = useState({ open: false });
-  const askConfirm = useCallback(({ title, message, danger = false, confirm = 'Bestätigen', onConfirm }) => {
-    setConfirmDialog({ open: true, title, message, danger, confirm, onConfirm });
-  }, []);
+  const askConfirm = useCallback(
+    ({ title, message, danger = false, confirm = 'Bestätigen', onConfirm }) => {
+      setConfirmDialog({ open: true, title, message, danger, confirm, onConfirm });
+    },
+    [],
+  );
   const closeConfirm = useCallback(() => setConfirmDialog({ open: false }), []);
 
   /* local UI state */
@@ -87,6 +124,7 @@ export default function App() {
   const [activeConfigId, setActiveConfigId] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [agentSidebarCollapsed, setAgentSidebarCollapsed] = useState(false);
+  const [detailListing, setDetailListing] = useState(null);
   const [page, setPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState(persistedFilters.searchQuery);
   const [listingTypeFilter, setListingTypeFilter] = useState(persistedFilters.listingTypeFilter);
@@ -99,22 +137,42 @@ export default function App() {
   const [maxAvailableFrom, setMaxAvailableFrom] = useState(persistedFilters.maxAvailableFrom);
 
   /* initial load */
-  useEffect(() => { loadStats(); loadConfigStats(); loadRuns(); loadConfigs(); loadProviders(); loadScrapeConfig(); }, []);
+  useEffect(() => {
+    loadStats();
+    loadConfigStats();
+    loadRuns();
+    loadConfigs();
+    loadProviders();
+    loadScrapeConfig();
+  }, []);
   useEffect(() => cleanup, [cleanup]);
 
   useEffect(() => {
-    localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify({
-      searchQuery,
-      listingTypeFilter,
-      providerFilter,
-      publisherFilter,
-      minPrice,
-      maxPrice,
-      minSize,
-      minRooms,
-      maxAvailableFrom,
-    }));
-  }, [searchQuery, listingTypeFilter, providerFilter, publisherFilter, minPrice, maxPrice, minSize, minRooms, maxAvailableFrom]);
+    localStorage.setItem(
+      FILTERS_STORAGE_KEY,
+      JSON.stringify({
+        searchQuery,
+        listingTypeFilter,
+        providerFilter,
+        publisherFilter,
+        minPrice,
+        maxPrice,
+        minSize,
+        minRooms,
+        maxAvailableFrom,
+      }),
+    );
+  }, [
+    searchQuery,
+    listingTypeFilter,
+    providerFilter,
+    publisherFilter,
+    minPrice,
+    maxPrice,
+    minSize,
+    minRooms,
+    maxAvailableFrom,
+  ]);
 
   useEffect(() => {
     const params = { include_blacklisted: true };
@@ -122,18 +180,23 @@ export default function App() {
     loadListings(params);
   }, [loadListings]);
 
-  useEffect(() => { setPage(1); }, [activeTab]);
+  useEffect(() => {
+    setPage(1);
+  }, [activeTab]);
 
   /* config selection handler – always resets tab to ALL when switching */
-  const handleSelectConfig = useCallback((configId) => {
-    setActiveConfigId(configId ?? null);
-    const params = { include_blacklisted: true };
-    if (configId) params.search_config_id = configId;
-    currentListingParamsRef.current = params;
-    loadListings(params);
-    setActiveTab(TABS.ALL);
-    setPage(1);
-  }, [loadListings]);
+  const handleSelectConfig = useCallback(
+    (configId) => {
+      setActiveConfigId(configId ?? null);
+      const params = { include_blacklisted: true };
+      if (configId) params.search_config_id = configId;
+      currentListingParamsRef.current = params;
+      loadListings(params);
+      setActiveTab(TABS.ALL);
+      setPage(1);
+    },
+    [loadListings],
+  );
 
   /* navigate home: deselect agent, reset to unseen tab */
   const handleNavigateHome = useCallback(() => {
@@ -143,8 +206,29 @@ export default function App() {
     loadListings(params);
     setActiveTab(TABS.UNSEEN);
     setPage(1);
-    setSearchQuery(''); setMinPrice(''); setMaxPrice(''); setMinSize(''); setMinRooms(''); setListingTypeFilter(''); setProviderFilter(''); setPublisherFilter(''); setMaxAvailableFrom('');
+    setSearchQuery('');
+    setMinPrice('');
+    setMaxPrice('');
+    setMinSize('');
+    setMinRooms('');
+    setListingTypeFilter('');
+    setProviderFilter('');
+    setPublisherFilter('');
+    setMaxAvailableFrom('');
   }, [loadListings]);
+
+  const handleOpenDetails = useCallback(
+    (listing) => {
+      if (!listing) return;
+      setDetailListing({ ...listing, is_seen: 1 });
+      if (!listing.is_seen) {
+        handleMarkSeen(listing.id).catch((err) => {
+          showToast?.(`Konnte nicht als gesehen markieren: ${err.message}`, 'error');
+        });
+      }
+    },
+    [handleMarkSeen, showToast],
+  );
 
   const isProviderFilterActive = !activeConfigId && activeTab === TABS.ALL;
 
@@ -153,72 +237,105 @@ export default function App() {
     const q = searchQuery.toLowerCase();
     const keywords = scrapeConfig.blacklistKeywords ?? [];
 
-    if (listingTypeFilter) list = list.filter(l => l.listing_type === listingTypeFilter);
-    if (q) list = list.filter(l => (l.title || '').toLowerCase().includes(q) || (l.address || '').toLowerCase().includes(q) || (l.description || '').toLowerCase().includes(q));
-    if (publisherFilter) list = list.filter(l => (l.publisher || '').toLowerCase().includes(publisherFilter.toLowerCase()));
-    if (minPrice) list = list.filter(l => parseNum(l.price) >= Number(minPrice));
-    if (maxPrice) list = list.filter(l => parseNum(l.price) <= Number(maxPrice));
-    if (minSize) list = list.filter(l => parseNum(l.size) >= Number(minSize));
-    if (minRooms) list = list.filter(l => { const r = parseNum(l.rooms); return r && r >= Number(minRooms); });
-    if (maxAvailableFrom) list = list.filter(l => !l.available_from || l.available_from === 'sofort' || l.available_from <= maxAvailableFrom);
+    if (listingTypeFilter) list = list.filter((l) => l.listing_type === listingTypeFilter);
+    if (q)
+      list = list.filter(
+        (l) =>
+          (l.title || '').toLowerCase().includes(q) ||
+          (l.address || '').toLowerCase().includes(q) ||
+          (l.description || '').toLowerCase().includes(q),
+      );
+    if (publisherFilter)
+      list = list.filter((l) =>
+        (l.publisher || '').toLowerCase().includes(publisherFilter.toLowerCase()),
+      );
+    if (minPrice) list = list.filter((l) => parseNum(l.price) >= Number(minPrice));
+    if (maxPrice) list = list.filter((l) => parseNum(l.price) <= Number(maxPrice));
+    if (minSize) list = list.filter((l) => parseNum(l.size) >= Number(minSize));
+    if (minRooms)
+      list = list.filter((l) => {
+        const r = parseNum(l.rooms);
+        return r && r >= Number(minRooms);
+      });
+    if (maxAvailableFrom)
+      list = list.filter(
+        (l) =>
+          !l.available_from ||
+          l.available_from === 'sofort' ||
+          l.available_from <= maxAvailableFrom,
+      );
 
     if (keywords.length > 0) {
-      list = list.filter(l => {
-        if (l.is_blacklisted || l.is_favorite) return true; 
+      list = list.filter((l) => {
+        if (l.is_blacklisted || l.is_favorite) return true;
         const text = `${l.title || ''} ${l.description || ''} ${l.publisher || ''}`.toLowerCase();
-        return !keywords.some(kw => text.includes(kw.toLowerCase()));
+        return !keywords.some((kw) => text.includes(kw.toLowerCase()));
       });
     }
     return list;
-  }, [listings, listingTypeFilter, publisherFilter, searchQuery, minPrice, maxPrice, minSize, minRooms, maxAvailableFrom, scrapeConfig]);
+  }, [
+    listings,
+    listingTypeFilter,
+    publisherFilter,
+    searchQuery,
+    minPrice,
+    maxPrice,
+    minSize,
+    minRooms,
+    maxAvailableFrom,
+    scrapeConfig,
+  ]);
 
   const filteredBase = useMemo(() => {
-    if (isProviderFilterActive && providerFilter) return uiFilteredListings.filter(l => l.provider === providerFilter);
+    if (isProviderFilterActive && providerFilter)
+      return uiFilteredListings.filter((l) => l.provider === providerFilter);
     return uiFilteredListings;
   }, [uiFilteredListings, isProviderFilterActive, providerFilter]);
 
   const filtered = useMemo(() => {
     let list = [...filteredBase];
-    if (activeTab === TABS.UNSEEN) list = list.filter(l => !l.is_blacklisted && !l.is_seen);
+    if (activeTab === TABS.UNSEEN) list = list.filter((l) => !l.is_blacklisted && !l.is_seen);
     else if (activeTab === TABS.FAVORITES) {
-      list = list.filter(l => !l.is_blacklisted && l.is_favorite);
+      list = list.filter((l) => !l.is_blacklisted && l.is_favorite);
       list.sort((a, b) => {
         const ta = a.favorited_at ? new Date(a.favorited_at).getTime() : 0;
         const tb = b.favorited_at ? new Date(b.favorited_at).getTime() : 0;
         return tb - ta;
       });
-    }
-    else if (activeTab === TABS.BLACKLISTED) {
-      list = list.filter(l => l.is_blacklisted);
+    } else if (activeTab === TABS.BLACKLISTED) {
+      list = list.filter((l) => l.is_blacklisted);
       list.sort((a, b) => {
         const ta = a.blacklisted_at ? new Date(a.blacklisted_at).getTime() : 0;
         const tb = b.blacklisted_at ? new Date(b.blacklisted_at).getTime() : 0;
         return tb - ta;
       });
-    }
-    else list = list.filter(l => !l.is_blacklisted);
+    } else list = list.filter((l) => !l.is_blacklisted);
     return list;
   }, [filteredBase, activeTab]);
 
   const tabCounts = useMemo(() => {
     let base = listings;
-    if (listingTypeFilter) base = base.filter(l => l.listing_type === listingTypeFilter);
-    if (isProviderFilterActive && providerFilter) base = base.filter(l => l.provider === providerFilter);
-    const nonBlacklisted = base.filter(l => !l.is_blacklisted);
+    if (listingTypeFilter) base = base.filter((l) => l.listing_type === listingTypeFilter);
+    if (isProviderFilterActive && providerFilter)
+      base = base.filter((l) => l.provider === providerFilter);
+    const nonBlacklisted = base.filter((l) => !l.is_blacklisted);
     return {
       [TABS.ALL]: nonBlacklisted.length,
-      [TABS.UNSEEN]: nonBlacklisted.filter(l => !l.is_seen).length,
-      [TABS.FAVORITES]: nonBlacklisted.filter(l => l.is_favorite).length,
-      [TABS.BLACKLISTED]: base.filter(l => l.is_blacklisted).length,
+      [TABS.UNSEEN]: nonBlacklisted.filter((l) => !l.is_seen).length,
+      [TABS.FAVORITES]: nonBlacklisted.filter((l) => l.is_favorite).length,
+      [TABS.BLACKLISTED]: base.filter((l) => l.is_blacklisted).length,
     };
   }, [listings, listingTypeFilter, isProviderFilterActive, providerFilter]);
 
-  const activeConfigStats = useMemo(() => ({
-    total: tabCounts[TABS.ALL],
-    unseen: tabCounts[TABS.UNSEEN],
-    favorites: tabCounts[TABS.FAVORITES],
-    blacklisted: tabCounts[TABS.BLACKLISTED],
-  }), [tabCounts]);
+  const activeConfigStats = useMemo(
+    () => ({
+      total: tabCounts[TABS.ALL],
+      unseen: tabCounts[TABS.UNSEEN],
+      favorites: tabCounts[TABS.FAVORITES],
+      blacklisted: tabCounts[TABS.BLACKLISTED],
+    }),
+    [tabCounts],
+  );
 
   const pages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
   const safePage = Math.min(page, pages);
@@ -228,18 +345,31 @@ export default function App() {
     setPage(newPage);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
-  const unseenCount = listings.filter(l => !l.is_seen && !l.is_blacklisted).length;
+  const unseenCount = listings.filter((l) => !l.is_seen && !l.is_blacklisted).length;
 
-  const resetFilters = () => { setSearchQuery(''); setMinPrice(''); setMaxPrice(''); setMinSize(''); setMinRooms(''); setListingTypeFilter(''); setProviderFilter(''); setPublisherFilter(''); setMaxAvailableFrom(''); };
+  const resetFilters = () => {
+    setSearchQuery('');
+    setMinPrice('');
+    setMaxPrice('');
+    setMinSize('');
+    setMinRooms('');
+    setListingTypeFilter('');
+    setProviderFilter('');
+    setPublisherFilter('');
+    setMaxAvailableFrom('');
+  };
 
-  const activeAgent = configs.find(c => c.id === activeConfigId);
+  const activeAgent = configs.find((c) => c.id === activeConfigId);
   const activeAgentName = activeAgent ? activeAgent.name : null;
-  const enabledConfigs = useMemo(() => configs.filter(c => c.enabled), [configs]);
+  const enabledConfigs = useMemo(() => configs.filter((c) => c.enabled), [configs]);
   const canScrape = enabledConfigs.length > 0;
 
   const handleHeaderScrape = useCallback(() => {
     if (!canScrape) {
-      showToast?.('Kein aktiver Agent vorhanden. Bitte zuerst einen Agenten anlegen oder aktivieren.', 'info');
+      showToast?.(
+        'Kein aktiver Agent vorhanden. Bitte zuerst einen Agenten anlegen oder aktivieren.',
+        'info',
+      );
       return;
     }
     if (activeConfigId) {
@@ -255,12 +385,15 @@ export default function App() {
     <ErrorBoundary>
       <div className="app">
         <Header
-          scraping={scraping} scrapeProgress={scrapeProgress}
+          scraping={scraping}
+          scrapeProgress={scrapeProgress}
           unseenCount={unseenCount}
           canScrape={canScrape}
-          onScrape={handleHeaderScrape} onScrapeAll={startScraping} onStop={stopScraping}
+          onScrape={handleHeaderScrape}
+          onScrapeAll={startScraping}
+          onStop={stopScraping}
           onMarkAllSeen={handleMarkAllSeen}
-          onToggleSidebar={() => setSidebarOpen(o => !o)}
+          onToggleSidebar={() => setSidebarOpen((o) => !o)}
           onNavigateHome={handleNavigateHome}
           activeConfigId={activeConfigId}
           activeAgentName={activeAgentName}
@@ -278,11 +411,12 @@ export default function App() {
             onAdd={addConfig}
             onEdit={(id, d) => editConfig(id, d)}
             onDelete={(id) => {
-              const cfg = configs.find(c => c.id === id);
+              const cfg = configs.find((c) => c.id === id);
               const name = cfg?.name || 'Agent';
               askConfirm({
                 title: `"${name}" löschen?`,
-                message: 'Favoriten & Blacklist-Einträge bleiben erhalten. Alle anderen Listings dieses Agenten werden entfernt.',
+                message:
+                  'Favoriten & Blacklist-Einträge bleiben erhalten. Alle anderen Listings dieses Agenten werden entfernt.',
                 confirm: 'Agent löschen',
                 danger: true,
                 onConfirm: async () => {
@@ -298,11 +432,12 @@ export default function App() {
             onToggle={toggleConfig}
             onScrapeConfig={startScrapingConfig}
             onResetConfig={(configId) => {
-              const cfg = configs.find(c => c.id === configId);
+              const cfg = configs.find((c) => c.id === configId);
               const name = cfg?.name || 'Agent';
               askConfirm({
                 title: `Listings von "${name}" bereinigen?`,
-                message: 'Alle normalen Listings dieses Agenten werden gelöscht. Favoriten & Blacklist-Einträge bleiben erhalten.',
+                message:
+                  'Alle normalen Listings dieses Agenten werden gelöscht. Favoriten & Blacklist-Einträge bleiben erhalten.',
                 confirm: 'Bereinigen',
                 danger: false,
                 onConfirm: async () => {
@@ -312,11 +447,12 @@ export default function App() {
               });
             }}
             onClearFavoritesForConfig={(configId) => {
-              const cfg = configs.find(c => c.id === configId);
+              const cfg = configs.find((c) => c.id === configId);
               const name = cfg?.name || 'Agent';
               askConfirm({
                 title: `Favoriten von "${name}" löschen?`,
-                message: 'Alle als Favorit markierten Listings dieses Agenten werden zurückgesetzt.',
+                message:
+                  'Alle als Favorit markierten Listings dieses Agenten werden zurückgesetzt.',
                 confirm: 'Favoriten löschen',
                 danger: true,
                 onConfirm: async () => {
@@ -326,7 +462,7 @@ export default function App() {
               });
             }}
             onClearBlacklistForConfig={(configId) => {
-              const cfg = configs.find(c => c.id === configId);
+              const cfg = configs.find((c) => c.id === configId);
               const name = cfg?.name || 'Agent';
               askConfirm({
                 title: `Blacklist von "${name}" leeren?`,
@@ -341,7 +477,7 @@ export default function App() {
             }}
             scraping={scraping}
             collapsed={agentSidebarCollapsed}
-            onToggleCollapse={() => setAgentSidebarCollapsed(c => !c)}
+            onToggleCollapse={() => setAgentSidebarCollapsed((c) => !c)}
           />
 
           <main className="main">
@@ -349,24 +485,50 @@ export default function App() {
               <div
                 className="active-agent-indicator"
                 style={{
-                  '--active-agent-accent': (LISTING_TYPE_COLORS[activeAgent.listing_type] || {}).text || '#6366f1',
-                  '--active-agent-soft': (LISTING_TYPE_COLORS[activeAgent.listing_type] || {}).bg || '#eef2ff',
+                  '--active-agent-accent':
+                    (LISTING_TYPE_COLORS[activeAgent.listing_type] || {}).text || '#6366f1',
+                  '--active-agent-soft':
+                    (LISTING_TYPE_COLORS[activeAgent.listing_type] || {}).bg || '#eef2ff',
                 }}
               >
                 <div className="active-agent-info">
                   <span className="active-agent-name">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14"><circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" /></svg>
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      width="14"
+                      height="14"
+                    >
+                      <circle cx="11" cy="11" r="8" />
+                      <path d="M21 21l-4.35-4.35" />
+                    </svg>
                     {activeAgent.name}
                   </span>
                   <div className="active-agent-details">
-                    <span className="active-agent-detail active-agent-detail--provider" style={{
+                    <span
+                      className="active-agent-detail active-agent-detail--provider"
+                      style={{
                         background: PROVIDER_COLORS[activeAgent.provider]?.bg ?? '#f3f4f6',
                         color: PROVIDER_COLORS[activeAgent.provider]?.text ?? '#374151',
                         border: `1px solid ${PROVIDER_COLORS[activeAgent.provider]?.border ?? '#d1d5db'}`,
-                      }}>
-                      {providers.find(p => p.id === activeAgent.provider)?.name || activeAgent.provider}
+                      }}
+                    >
+                      {providers.find((p) => p.id === activeAgent.provider)?.name ||
+                        activeAgent.provider}
                     </span>
-                    <span className="active-agent-badge" style={{ background: (LISTING_TYPE_COLORS[activeAgent.listing_type] || { bg: '#f3f4f6' }).bg, color: (LISTING_TYPE_COLORS[activeAgent.listing_type] || { text: '#374151' }).text }}>
+                    <span
+                      className="active-agent-badge"
+                      style={{
+                        background: (
+                          LISTING_TYPE_COLORS[activeAgent.listing_type] || { bg: '#f3f4f6' }
+                        ).bg,
+                        color: (
+                          LISTING_TYPE_COLORS[activeAgent.listing_type] || { text: '#374151' }
+                        ).text,
+                      }}
+                    >
                       {LISTING_TYPE_LABELS[activeAgent.listing_type] || activeAgent.listing_type}
                     </span>
                     {activeAgent.scrape_url && (
@@ -378,43 +540,74 @@ export default function App() {
                           readOnly
                           value={activeAgent.scrape_url}
                           title="Klicken um gesamte URL zu lesen / kopieren"
-                          onClick={e => e.target.select()}
+                          onClick={(e) => e.target.select()}
                         />
                       </span>
                     )}
                   </div>
                 </div>
                 <button className="active-agent-close" onClick={() => setActiveConfigId(null)}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    width="12"
+                    height="12"
+                  >
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
                   Alle anzeigen
                 </button>
               </div>
             )}
 
             <FilterBar
-              activeTab={activeTab} stats={activeConfigStats} listingTypeFilter={listingTypeFilter}
+              activeTab={activeTab}
+              stats={activeConfigStats}
+              listingTypeFilter={listingTypeFilter}
               tabCounts={tabCounts}
-              searchQuery={searchQuery} minPrice={minPrice} maxPrice={maxPrice} minSize={minSize} minRooms={minRooms}
+              searchQuery={searchQuery}
+              minPrice={minPrice}
+              maxPrice={maxPrice}
+              minSize={minSize}
+              minRooms={minRooms}
               publisherFilter={publisherFilter}
               providerFilter={providerFilter}
               providers={providers}
               showProviderFilter={isProviderFilterActive}
               showListingTypeFilter={!activeConfigId}
-              onTabChange={setActiveTab} onListingTypeChange={setListingTypeFilter}
-              onSearch={setSearchQuery} onMinPrice={setMinPrice} onMaxPrice={setMaxPrice} onMinSize={setMinSize} onMinRooms={setMinRooms}
+              onTabChange={setActiveTab}
+              onListingTypeChange={setListingTypeFilter}
+              onSearch={setSearchQuery}
+              onMinPrice={setMinPrice}
+              onMaxPrice={setMaxPrice}
+              onMinSize={setMinSize}
+              onMinRooms={setMinRooms}
               onPublisherFilter={setPublisherFilter}
               onProviderFilter={setProviderFilter}
-              maxAvailableFrom={maxAvailableFrom} onMaxAvailableFrom={setMaxAvailableFrom}
+              maxAvailableFrom={maxAvailableFrom}
+              onMaxAvailableFrom={setMaxAvailableFrom}
               onReset={resetFilters}
             />
 
             <ListingsGrid
-              listings={paginated} allCount={filtered.length} loading={loading}
-              page={safePage} pages={pages} onPageChange={handlePageChange}
-              onSeen={handleSeen} onFavorite={handleFavorite} onBlacklist={handleBlacklist} onUnblacklist={handleUnblacklist}
+              listings={paginated}
+              allCount={filtered.length}
+              loading={loading}
+              page={safePage}
+              pages={pages}
+              onPageChange={handlePageChange}
+              onSeen={handleSeen}
+              onFavorite={handleFavorite}
+              onBlacklist={handleBlacklist}
+              onUnblacklist={handleUnblacklist}
+              onDetails={handleOpenDetails}
               onScrape={handleHeaderScrape}
               canScrape={canScrape}
-              allFiltered={filtered} itemsPerPage={ITEMS_PER_PAGE}
+              allFiltered={filtered}
+              itemsPerPage={ITEMS_PER_PAGE}
               isBlacklistView={activeTab === TABS.BLACKLISTED}
             />
 
@@ -427,14 +620,20 @@ export default function App() {
           onClose={() => setSidebarOpen(false)}
           onReset={() => handleReset(currentListingParamsRef.current)}
           showToast={showToast}
-          onSaved={() => { loadScrapeConfig(); reloadAll(); }}
+          onSaved={() => {
+            loadScrapeConfig();
+            reloadAll();
+          }}
           onClearFavorites={() =>
             askConfirm({
               title: 'Alle Favoriten löschen?',
               message: 'Sämtliche als Favorit markierten Listings werden zurückgesetzt.',
               confirm: 'Alle Favoriten löschen',
               danger: true,
-              onConfirm: async () => { closeConfirm(); await handleClearFavorites(); },
+              onConfirm: async () => {
+                closeConfirm();
+                await handleClearFavorites();
+              },
             })
           }
           onClearBlacklist={() =>
@@ -443,7 +642,10 @@ export default function App() {
               message: 'Alle Blacklist-Einträge werden dauerhaft entfernt.',
               confirm: 'Blacklist leeren',
               danger: true,
-              onConfirm: async () => { closeConfirm(); await handleClearBlacklist(); },
+              onConfirm: async () => {
+                closeConfirm();
+                await handleClearBlacklist();
+              },
             })
           }
         />
@@ -459,8 +661,17 @@ export default function App() {
           onCancel={closeConfirm}
         />
 
+        <ListingDetailDrawer
+          open={Boolean(detailListing)}
+          listing={detailListing}
+          onClose={() => setDetailListing(null)}
+          showToast={showToast}
+        />
+
         <div className="toast-container">
-          {toasts.map(t => <Toast key={t.id} msg={t.msg} type={t.type} action={t.action} />)}
+          {toasts.map((t) => (
+            <Toast key={t.id} msg={t.msg} type={t.type} action={t.action} />
+          ))}
         </div>
       </div>
     </ErrorBoundary>

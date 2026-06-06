@@ -327,7 +327,7 @@ export async function scrape(inputUrl, maxPages = 10, opts = {}) {
  *
  * @param {string} inputUrl
  * @param {number} maxPages
- * @param {{ signal?: AbortSignal, onProgress?: Function, log?: Function }} opts
+ * @param {{ signal?: AbortSignal, onProgress?: Function, knownIds?: Set, log?: Function }} opts
  * @returns {Promise<{ mobileUrl: string, hitCount: number|string, pageCount: number, targetPages: number, pages: Array<{ pageNum: number, listings: object[] }> }>}
  */
 export async function scrapePages(inputUrl, maxPages = 10, opts = {}) {

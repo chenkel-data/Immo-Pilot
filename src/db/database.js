@@ -30,6 +30,8 @@ db.exec(`
     size        TEXT,
     rooms       TEXT,
     address     TEXT,
+    lat         REAL,
+    lon         REAL,
     description TEXT,
     publisher   TEXT,
     link        TEXT NOT NULL,
@@ -76,6 +78,65 @@ db.exec(`
     FOREIGN KEY (listing_id) REFERENCES listings(id) ON DELETE CASCADE,
     FOREIGN KEY (search_config_id) REFERENCES search_configs(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS listing_details (
+    listing_id            TEXT PRIMARY KEY,
+    provider              TEXT NOT NULL,
+    expose_id             TEXT,
+    fetched_at            TEXT NOT NULL,
+    source_version        TEXT,
+    status                TEXT NOT NULL DEFAULT 'ok',
+    error                 TEXT,
+    available_from        TEXT,
+    available_from_source TEXT,
+    cold_rent             TEXT,
+    warm_rent             TEXT,
+    service_charge        TEXT,
+    deposit               TEXT,
+    price_per_sqm         TEXT,
+    floor                 TEXT,
+    bedrooms              TEXT,
+    bathrooms             TEXT,
+    pets                  TEXT,
+    has_kitchen           INTEGER,
+    has_cellar            INTEGER,
+    has_balcony           INTEGER,
+    has_garden            INTEGER,
+    has_lift              INTEGER,
+    barrier_free          INTEGER,
+    construction_year     TEXT,
+    condition             TEXT,
+    heating_type          TEXT,
+    energy_carrier        TEXT,
+    energy_class          TEXT,
+    energy_value          TEXT,
+    description           TEXT,
+    location_description  TEXT,
+    address_line1         TEXT,
+    address_line2         TEXT,
+    lat                   REAL,
+    lon                   REAL,
+    agent_name            TEXT,
+    contact_phone_numbers TEXT,
+    contact_available     INTEGER,
+    images                TEXT,
+    attribute_groups      TEXT,
+    raw_detail_json       TEXT,
+    FOREIGN KEY (listing_id) REFERENCES listings(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS map_location_cache (
+    query            TEXT PRIMARY KEY,
+    fetched_at       TEXT NOT NULL,
+    status           TEXT NOT NULL DEFAULT 'ok',
+    source           TEXT,
+    label            TEXT,
+    precision        TEXT,
+    lat              REAL,
+    lon              REAL,
+    bbox_json        TEXT,
+    geometry_geojson TEXT
+  );
 `);
 
 // ── Migrations for existing DBs ───────────────────────────────────────────
@@ -91,6 +152,8 @@ safeAlter('ALTER TABLE listings ADD COLUMN rooms TEXT');
 safeAlter('ALTER TABLE listings ADD COLUMN publisher TEXT');
 safeAlter('ALTER TABLE listings ADD COLUMN listed_at TEXT');
 safeAlter('ALTER TABLE listings ADD COLUMN images TEXT');
+safeAlter('ALTER TABLE listings ADD COLUMN lat REAL');
+safeAlter('ALTER TABLE listings ADD COLUMN lon REAL');
 safeAlter("ALTER TABLE listings ADD COLUMN provider TEXT DEFAULT 'kleinanzeigen'");
 safeAlter("ALTER TABLE listings ADD COLUMN listing_type TEXT DEFAULT 'miete'");
 safeAlter('ALTER TABLE listings ADD COLUMN search_config_id INTEGER');
@@ -123,6 +186,12 @@ db.exec('CREATE INDEX IF NOT EXISTS idx_listings_link ON listings(link)');
 
 // Index for fast agent lookups on the junction table
 db.exec('CREATE INDEX IF NOT EXISTS idx_listing_agents_config ON listing_agents(search_config_id)');
+
+// Index for ordering or inspecting detail fetch timestamps
+db.exec('CREATE INDEX IF NOT EXISTS idx_listing_details_fetched ON listing_details(fetched_at)');
+
+// Cache lookup for address/district geocoding
+db.exec('CREATE INDEX IF NOT EXISTS idx_map_location_cache_status ON map_location_cache(status)');
 
 // Migration: populate listing_agents from existing search_config_id values
 {
@@ -349,13 +418,15 @@ export function upsertListing(l) {
 
   db.prepare(
     `
-    INSERT INTO listings (id, source, provider, listing_type, title, price, size, rooms, address, description, publisher, link, image, is_blacklisted, listed_at, available_from, first_seen, last_seen, scrape_rank)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO listings (id, source, provider, listing_type, title, price, size, rooms, address, lat, lon, description, publisher, link, image, is_blacklisted, listed_at, available_from, first_seen, last_seen, scrape_rank)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       price           = excluded.price,
       size            = excluded.size,
       rooms           = COALESCE(excluded.rooms, rooms),
       address         = excluded.address,
+      lat             = COALESCE(excluded.lat, lat),
+      lon             = COALESCE(excluded.lon, lon),
       description     = excluded.description,
       publisher       = COALESCE(excluded.publisher, publisher),
       image           = excluded.image,
@@ -374,6 +445,8 @@ export function upsertListing(l) {
     l.size ?? null,
     l.rooms ?? null,
     l.address ?? null,
+    l.lat ?? null,
+    l.lon ?? null,
     l.description ?? null,
     l.publisher ?? null,
     l.link,
@@ -508,6 +581,230 @@ export function getListingById(id) {
     .get(id);
   if (!row) return null;
   return { ...row, agent_ids: row.agent_ids ? row.agent_ids.split(',').map(Number) : [] };
+}
+
+function jsonString(value) {
+  return value == null ? null : JSON.stringify(value);
+}
+
+function jsonValue(value, fallback) {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeDetailRow(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    contact_phone_numbers: jsonValue(row.contact_phone_numbers, []),
+    images: jsonValue(row.images, []),
+    attribute_groups: jsonValue(row.attribute_groups, []),
+    raw_detail_json: jsonValue(row.raw_detail_json, null),
+  };
+}
+
+export function upsertListingDetail(detail) {
+  const fetchedAt = detail.fetched_at ?? new Date().toISOString();
+
+  db.prepare(
+    `
+    INSERT INTO listing_details (
+      listing_id, provider, expose_id, fetched_at, source_version, status, error,
+      available_from, available_from_source,
+      cold_rent, warm_rent, service_charge, deposit, price_per_sqm,
+      floor, bedrooms, bathrooms, pets,
+      has_kitchen, has_cellar, has_balcony, has_garden, has_lift, barrier_free,
+      construction_year, condition, heating_type, energy_carrier, energy_class, energy_value,
+      description, location_description, address_line1, address_line2, lat, lon,
+      agent_name, contact_phone_numbers, contact_available, images, attribute_groups, raw_detail_json
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(listing_id) DO UPDATE SET
+      provider              = excluded.provider,
+      expose_id             = excluded.expose_id,
+      fetched_at            = excluded.fetched_at,
+      source_version        = excluded.source_version,
+      status                = excluded.status,
+      error                 = excluded.error,
+      available_from        = excluded.available_from,
+      available_from_source = excluded.available_from_source,
+      cold_rent             = excluded.cold_rent,
+      warm_rent             = excluded.warm_rent,
+      service_charge        = excluded.service_charge,
+      deposit               = excluded.deposit,
+      price_per_sqm         = excluded.price_per_sqm,
+      floor                 = excluded.floor,
+      bedrooms              = excluded.bedrooms,
+      bathrooms             = excluded.bathrooms,
+      pets                  = excluded.pets,
+      has_kitchen           = excluded.has_kitchen,
+      has_cellar            = excluded.has_cellar,
+      has_balcony           = excluded.has_balcony,
+      has_garden            = excluded.has_garden,
+      has_lift              = excluded.has_lift,
+      barrier_free          = excluded.barrier_free,
+      construction_year     = excluded.construction_year,
+      condition             = excluded.condition,
+      heating_type          = excluded.heating_type,
+      energy_carrier        = excluded.energy_carrier,
+      energy_class          = excluded.energy_class,
+      energy_value          = excluded.energy_value,
+      description           = excluded.description,
+      location_description  = excluded.location_description,
+      address_line1         = excluded.address_line1,
+      address_line2         = excluded.address_line2,
+      lat                   = excluded.lat,
+      lon                   = excluded.lon,
+      agent_name            = excluded.agent_name,
+      contact_phone_numbers = excluded.contact_phone_numbers,
+      contact_available     = excluded.contact_available,
+      images                = excluded.images,
+      attribute_groups      = excluded.attribute_groups,
+      raw_detail_json       = excluded.raw_detail_json
+  `,
+  ).run(
+    detail.listing_id,
+    detail.provider ?? 'immoscout24',
+    detail.expose_id ?? null,
+    fetchedAt,
+    detail.source_version ?? null,
+    detail.status ?? 'ok',
+    detail.error ?? null,
+    detail.available_from ?? null,
+    detail.available_from_source ?? null,
+    detail.cold_rent ?? null,
+    detail.warm_rent ?? null,
+    detail.service_charge ?? null,
+    detail.deposit ?? null,
+    detail.price_per_sqm ?? null,
+    detail.floor ?? null,
+    detail.bedrooms ?? null,
+    detail.bathrooms ?? null,
+    detail.pets ?? null,
+    detail.has_kitchen ?? null,
+    detail.has_cellar ?? null,
+    detail.has_balcony ?? null,
+    detail.has_garden ?? null,
+    detail.has_lift ?? null,
+    detail.barrier_free ?? null,
+    detail.construction_year ?? null,
+    detail.condition ?? null,
+    detail.heating_type ?? null,
+    detail.energy_carrier ?? null,
+    detail.energy_class ?? null,
+    detail.energy_value ?? null,
+    detail.description ?? null,
+    detail.location_description ?? null,
+    detail.address_line1 ?? null,
+    detail.address_line2 ?? null,
+    detail.lat ?? null,
+    detail.lon ?? null,
+    detail.agent_name ?? null,
+    jsonString(detail.contact_phone_numbers ?? []),
+    detail.contact_available ?? null,
+    jsonString(detail.images ?? []),
+    jsonString(detail.attribute_groups ?? []),
+    jsonString(detail.raw_detail_json ?? null),
+  );
+
+  if (
+    /^\d{4}-\d{2}-\d{2}$/.test(detail.available_from ?? '') ||
+    detail.available_from === 'sofort'
+  ) {
+    db.prepare('UPDATE listings SET available_from = COALESCE(available_from, ?) WHERE id = ?').run(
+      detail.available_from,
+      detail.listing_id,
+    );
+  }
+
+  if (Array.isArray(detail.images) && detail.images.length > 0) {
+    db.prepare('UPDATE listings SET images = COALESCE(images, ?) WHERE id = ?').run(
+      jsonString(detail.images),
+      detail.listing_id,
+    );
+  }
+}
+
+export function markListingDetailError({
+  listingId,
+  provider = 'immoscout24',
+  exposeId = null,
+  error,
+}) {
+  db.prepare(
+    `
+    INSERT INTO listing_details (listing_id, provider, expose_id, fetched_at, status, error)
+    VALUES (?, ?, ?, ?, 'error', ?)
+    ON CONFLICT(listing_id) DO UPDATE SET
+      provider   = excluded.provider,
+      expose_id  = excluded.expose_id,
+      fetched_at = excluded.fetched_at,
+      status     = 'error',
+      error      = excluded.error
+  `,
+  ).run(listingId, provider, exposeId, new Date().toISOString(), error ?? null);
+}
+
+export function getListingDetailById(listingId) {
+  const row = db.prepare('SELECT * FROM listing_details WHERE listing_id = ?').get(listingId);
+  return normalizeDetailRow(row);
+}
+
+function normalizeMapLocationRow(row) {
+  if (!row) return null;
+  return {
+    status: row.status,
+    source: row.source,
+    query: row.query,
+    label: row.label,
+    precision: row.precision,
+    lat: row.lat,
+    lon: row.lon,
+    bbox: jsonValue(row.bbox_json, null),
+    geometry_geojson: jsonValue(row.geometry_geojson, null),
+    fetched_at: row.fetched_at,
+  };
+}
+
+export function getCachedMapLocation(query) {
+  const row = db.prepare('SELECT * FROM map_location_cache WHERE query = ?').get(query);
+  return normalizeMapLocationRow(row);
+}
+
+export function upsertMapLocationCache(location) {
+  db.prepare(
+    `
+    INSERT INTO map_location_cache (
+      query, fetched_at, status, source, label, precision, lat, lon, bbox_json, geometry_geojson
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(query) DO UPDATE SET
+      fetched_at       = excluded.fetched_at,
+      status           = excluded.status,
+      source           = excluded.source,
+      label            = excluded.label,
+      precision        = excluded.precision,
+      lat              = excluded.lat,
+      lon              = excluded.lon,
+      bbox_json        = excluded.bbox_json,
+      geometry_geojson = excluded.geometry_geojson
+  `,
+  ).run(
+    location.query,
+    location.fetched_at ?? new Date().toISOString(),
+    location.status ?? 'ok',
+    location.source ?? null,
+    location.label ?? null,
+    location.precision ?? null,
+    location.lat ?? null,
+    location.lon ?? null,
+    jsonString(location.bbox ?? null),
+    jsonString(location.geometry_geojson ?? null),
+  );
 }
 
 export function resetAll() {

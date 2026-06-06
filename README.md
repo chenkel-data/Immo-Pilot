@@ -30,6 +30,8 @@ Currently supported: **ImmobilienScout24** & **Kleinanzeigen** – more provider
 - 🔍 **Search agents** – multiple agents, each with its own search URL from the provider and a page limit
 - 🚫 **Blacklist** – per click or globally via keywords
 - ❤️ **Favorites** – persisted even if the agent is deleted
+- 🧾 **Listing detail view** – open a listing to see provider details: rent breakdown, descriptions, amenities, energy data, address, contact info, image gallery, and original attribute groups
+- 🗺️ **Location map** – shows the listing location with Leaflet/OpenStreetMap, and uses cached Nominatim lookups when exact provider coordinates are missing or listings only expose postcode, district, or city-level address data
 - 🔄 **Scraping** – manual, on startup, or via cron; with pagination and duplicate filtering
 - 🧩 **Provider system** – currently: **ImmobilienScout24** & **Kleinanzeigen**; more planned
 - 🗄️ **Local** – SQLite
@@ -58,6 +60,7 @@ Everything is optional – works without a `.env` file.
 | `SCRAPE_ON_START` | `false` | Scrape on startup |
 | `SCRAPE_CRON_ENABLED` | `false` | Cron-based scraping |
 | `SCRAPE_CRON` | `*/30 * * * *` | Cron expression |
+| `NOMINATIM_USER_AGENT` | `Immo-Pilot/1.0 local detail map resolver` | User-Agent for OpenStreetMap Nominatim geocoding requests |
 
 Keyword blacklist in `config/default.json`:
 
@@ -76,9 +79,32 @@ One row per unique listing, deduplicated by provider ID. Stores all scraped cont
 
 ```
 id · source · title · price · size · rooms · address · description · publisher
-link · image · images · provider · listing_type
+lat · lon · link · image · images · provider · listing_type
 is_seen · is_favorite · is_blacklisted · blacklisted_at · favorited_at
 first_seen · last_seen · listed_at · available_from · scrape_rank
+```
+
+### Table `listing_details`
+Cached provider detail data for the listing detail view. Details are fetched on demand for ImmobilienScout24 and Kleinanzeigen. Stores normalized values for availability, rent, amenities, energy data, descriptions, address, coordinates, contact data, gallery image URLs, grouped attributes, and the raw provider response.
+
+```
+listing_id · provider · expose_id · fetched_at · source_version · status · error
+available_from · available_from_source
+cold_rent · warm_rent · service_charge · deposit · price_per_sqm
+floor · bedrooms · bathrooms · pets
+has_kitchen · has_cellar · has_balcony · has_garden · has_lift · barrier_free
+construction_year · condition · heating_type · energy_carrier · energy_class · energy_value
+description · location_description · address_line1 · address_line2 · lat · lon
+agent_name · contact_phone_numbers · contact_available
+images · attribute_groups · raw_detail_json
+```
+
+### Table `map_location_cache`
+Cache for map lookups used by the listing detail view. Provider coordinates are used directly when they are exact; listings without exact coordinates, or with only postcode, district, or city-level address data, are resolved through Nominatim and cached by query, including misses.
+
+```
+query · fetched_at · status · source · label · precision
+lat · lon · bbox_json · geometry_geojson
 ```
 
 ### Table `search_configs`
@@ -116,7 +142,7 @@ id · listing_id · url · created_at
 
 ```
 client/                   React frontend (Vite)
-  src/components/         UI components (cards, filter, sidebar, …)
+  src/components/         UI components (cards, filter, sidebar, detail panel, map, …)
   src/hooks/              Data fetching & state (useListings, useScraper, …)
 
 src/                      Express backend
@@ -124,7 +150,8 @@ src/                      Express backend
   routes/                 listings, scraper, configs
   scrapers/engine.js      Playwright runner + CSS selector config
   providers/              Adapter registry + provider implementations
-  services/               Scrape orchestration per agent
+  services/               Scrape orchestration per agent, map-location resolution
+  utils/                  Shared parsing and map-location helpers
   db/database.js          node:sqlite – schema, migrations, upserts
 
 config/default.json       Global blacklist keyword config
@@ -154,7 +181,10 @@ DELETE /api/listings/clear-favorites/:configId
 DELETE /api/listings/clear-blacklist      Clear blacklist flags
 DELETE /api/listings/clear-blacklist/:configId
                                           Clear blacklist flags for one agent
-GET    /api/listings/:id/images           Fetch or return cached gallery images
+GET    /api/listings/:id/images           Fetch or return cached gallery image URLs
+GET    /api/listings/:id/details          Fetch or return cached listing details
+POST   /api/listings/:id/details/refresh  Refresh provider detail data
+GET    /api/listings/:id/map-location     Resolve a normalized map location
 POST   /api/listings/batch-images         Batch image fetch for listing cards
 
 GET    /api/configs                       Get agents

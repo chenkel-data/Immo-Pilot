@@ -5,6 +5,10 @@ import {
   inferListingTypeFromUrl,
   transformResultItem,
 } from '../src/providers/immoscout24/index.js';
+import {
+  extractAvailableFromExposeDetail,
+  parseExposeDetail,
+} from '../src/providers/immoscout24/detail.js';
 
 // ── toApiUrl – URL Conversion ─────────────────────────────────────────────────
 
@@ -219,5 +223,102 @@ describe('transformResultItem', () => {
   it('handles missing titlePicture gracefully', () => {
     const raw = { ...RAW, titlePicture: undefined };
     expect(transformResultItem(raw).image).toBeNull();
+  });
+});
+
+// ── Detail parsing ───────────────────────────────────────────────────────────
+
+describe('immoscout24 detail parser', () => {
+  it('uses availability candidates from detail sections but ignores internet availability links', () => {
+    const detail = {
+      sections: [
+        {
+          type: 'ATTRIBUTE_LIST',
+          attributes: [
+            {
+              type: 'LINK',
+              label: 'Internet:',
+              reference: { label: 'Verfügbarkeit prüfen' },
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(extractAvailableFromExposeDetail(detail)).toEqual({ value: null, source: null });
+
+    expect(
+      extractAvailableFromExposeDetail({
+        sections: [{ type: 'TEXT_AREA', title: 'Hinweis', text: 'Ab sofort verfügbar' }],
+      }),
+    ).toEqual({ value: 'sofort', source: 'sections[0].text' });
+  });
+
+  it('parses normalized detail fields for on-demand storage', () => {
+    const parsed = parseExposeDetail(
+      {
+        header: { id: '168278740' },
+        sections: [
+          {
+            type: 'ATTRIBUTE_LIST',
+            title: 'Hauptkriterien',
+            attributes: [
+              { type: 'TEXT', label: 'Bezugsfrei ab:', text: '15.7.2026' },
+              { type: 'CHECK', label: 'Einbauküche:' },
+              { type: 'TEXT', label: 'Etage:', text: '2' },
+            ],
+          },
+          {
+            type: 'ATTRIBUTE_LIST',
+            title: 'Kosten',
+            attributes: [{ type: 'TEXT', label: 'Gesamtmiete:', text: '1.270 €' }],
+          },
+          {
+            type: 'TEXT_AREA',
+            title: 'Objektbeschreibung',
+            text: 'Erste Zeile\r\n\r\nZweite Zeile',
+          },
+          {
+            type: 'TEXT_AREA',
+            title: 'Lage',
+            text: 'Innenstadt\nU-Bahn nah',
+          },
+          {
+            type: 'MAP',
+            addressLine1: 'Musterstraße 1',
+            addressLine2: '12345 Berlin',
+            location: { lat: 52.5, lng: 13.4 },
+          },
+        ],
+        contact: {
+          contactData: { agent: { name: 'Agentur Beispiel' } },
+          phoneNumbers: [{ label: 'Mobilnummer', text: '+49 123 456' }],
+          mailButtonState: 'active',
+        },
+      },
+      { listingId: 'abc', exposeId: '168278740' },
+    );
+
+    expect(parsed.listing_id).toBe('abc');
+    expect(parsed.available_from).toBe('2026-07-15');
+    expect(parsed.available_from_source).toBe('Bezugsfrei ab');
+    expect(parsed.warm_rent).toBe('1.270 €');
+    expect(parsed.has_kitchen).toBe(1);
+    expect(parsed.floor).toBe('2');
+    expect(parsed.description).toBe('Erste Zeile\n\nZweite Zeile');
+    expect(parsed.location_description).toBe('Innenstadt\nU-Bahn nah');
+    expect(parsed.address_line1).toBe('Musterstraße 1');
+    expect(parsed.address_line2).toBe('12345 Berlin');
+    expect(parsed.lat).toBe(52.5);
+    expect(parsed.lon).toBe(13.4);
+    expect(parsed.agent_name).toBe('Agentur Beispiel');
+    expect(parsed.contact_available).toBe(1);
+    expect(parsed.contact_phone_numbers).toEqual([{ type: 'Mobilnummer', text: '+49 123 456' }]);
+    expect(parsed.attribute_groups[0].attributes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: 'Bezugsfrei ab', value: '15.7.2026' }),
+        expect.objectContaining({ label: 'Einbauküche', value: true }),
+      ]),
+    );
   });
 });

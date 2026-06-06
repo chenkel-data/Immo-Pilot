@@ -68,19 +68,11 @@ export function useListings(showToast) {
     await Promise.all([loadStats(), loadConfigStats()]);
   }, [loadStats, loadConfigStats]);
 
-  const handleSeen = useCallback(async (id) => {
-    const current = listings.find((l) => l.id === id);
-    if (!current) return;
+  const applySeenState = useCallback((current, isSeen) => {
+    if (!current || Boolean(current.is_seen) === Boolean(isSeen)) return;
 
-    const willBeSeen = !current.is_seen;
-    if (willBeSeen) {
-      await api.listings.markSeen(id);
-    } else {
-      await api.listings.markUnseen(id);
-    }
-
-    setListings((prev) => prev.map((l) => (l.id === id ? { ...l, is_seen: willBeSeen ? 1 : 0 } : l)));
-    const delta = willBeSeen ? -1 : 1;
+    setListings((prev) => prev.map((l) => (l.id === current.id ? { ...l, is_seen: isSeen ? 1 : 0 } : l)));
+    const delta = isSeen ? -1 : 1;
     setStats((prev) => ({ ...prev, unseen: Math.max(0, (prev.unseen ?? 0) + delta) }));
     const agentIds = current.agent_ids || [];
     if (agentIds.length > 0) {
@@ -94,7 +86,34 @@ export function useListings(showToast) {
         return next;
       });
     }
-  }, [listings]);
+  }, []);
+
+  const handleSeen = useCallback(async (id) => {
+    const current = listings.find((l) => l.id === id);
+    if (!current) return;
+
+    const willBeSeen = !current.is_seen;
+    if (willBeSeen) {
+      await api.listings.markSeen(id);
+    } else {
+      await api.listings.markUnseen(id);
+    }
+
+    applySeenState(current, willBeSeen);
+  }, [applySeenState, listings]);
+
+  const handleMarkSeen = useCallback(async (id) => {
+    const current = listings.find((l) => l.id === id);
+    if (!current || current.is_seen) return;
+
+    applySeenState(current, true);
+    try {
+      await api.listings.markSeen(id);
+    } catch (err) {
+      applySeenState({ ...current, is_seen: 1 }, false);
+      throw err;
+    }
+  }, [applySeenState, listings]);
 
   const handleFavorite = useCallback(async (id) => {
     const current = listings.find((l) => l.id === id);
@@ -207,7 +226,7 @@ export function useListings(showToast) {
   return {
     listings, setListings, loading, stats, configStats, orphanStats,
     loadListings, loadStats, loadConfigStats,
-    handleSeen, handleFavorite, handleBlacklist, handleUnblacklist,
+    handleSeen, handleMarkSeen, handleFavorite, handleBlacklist, handleUnblacklist,
     handleMarkAllSeen, handleReset, handleResetConfig,
     handleClearFavorites, handleClearFavoritesByConfig,
     handleClearBlacklist, handleClearBlacklistByConfig,
