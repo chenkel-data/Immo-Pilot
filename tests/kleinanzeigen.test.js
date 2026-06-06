@@ -211,9 +211,7 @@ describe('kleinanzeigen detail parser', () => {
 
   it('extracts the ad id from a Kleinanzeigen URL', () => {
     expect(
-      getAdIdFromUrl(
-        'https://www.kleinanzeigen.de/s-anzeige/schoene-wohnung/3364804426-199-4308',
-      ),
+      getAdIdFromUrl('https://www.kleinanzeigen.de/s-anzeige/schoene-wohnung/3364804426-199-4308'),
     ).toBe('3364804426');
   });
 
@@ -263,10 +261,10 @@ describe('kleinanzeigen detail parser', () => {
   });
 
   it('extracts a visible phone number when the page exposes one', () => {
-    const html = HTML.replace('hasVisiblePhoneNumber: false', 'hasVisiblePhoneNumber: true').replace(
-      "adPhoneNumber: ''",
-      "adPhoneNumber: '+49 151 12345678'",
-    );
+    const html = HTML.replace(
+      'hasVisiblePhoneNumber: false',
+      'hasVisiblePhoneNumber: true',
+    ).replace("adPhoneNumber: ''", "adPhoneNumber: '+49 151 12345678'");
     const detail = parseKleinanzeigenDetailHtml(html);
     expect(detail.contact_phone_numbers).toEqual([{ type: 'Telefon', text: '+49 151 12345678' }]);
   });

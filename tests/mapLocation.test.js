@@ -37,10 +37,12 @@ describe('map location helpers', () => {
   });
 
   it('does not fall back from exact-looking addresses to city polygons', () => {
-    expect(mapAddressCandidates('Am Hungerberg 10, 69434 Hirschhorn, Hirschhorn (Neckar)')).toEqual([
-      'Am Hungerberg 10, 69434 Hirschhorn, Hirschhorn (Neckar)',
-      'Am Hungerberg 10, Hirschhorn (Neckar)',
-    ]);
+    expect(mapAddressCandidates('Am Hungerberg 10, 69434 Hirschhorn, Hirschhorn (Neckar)')).toEqual(
+      [
+        'Am Hungerberg 10, 69434 Hirschhorn, Hirschhorn (Neckar)',
+        'Am Hungerberg 10, Hirschhorn (Neckar)',
+      ],
+    );
   });
 
   it('selects a regional polygon instead of a random building for regional queries', () => {
@@ -57,7 +59,8 @@ describe('map location helpers', () => {
           geojson: { type: 'Polygon', coordinates: [] },
         },
         {
-          display_name: 'Schwetzingerstadt/Oststadt, Mannheim, Baden-Württemberg, 68165, Deutschland',
+          display_name:
+            'Schwetzingerstadt/Oststadt, Mannheim, Baden-Württemberg, 68165, Deutschland',
           type: 'administrative',
           addresstype: 'city_district',
           lat: '49.4815281',
@@ -81,7 +84,8 @@ describe('map location helpers', () => {
     const location = selectBestNominatimLocation(
       [
         {
-          display_name: 'Mönchwörthstraße 19, Neckarau, Mannheim, Baden-Württemberg, 68199, Deutschland',
+          display_name:
+            'Mönchwörthstraße 19, Neckarau, Mannheim, Baden-Württemberg, 68199, Deutschland',
           type: 'apartments',
           addresstype: 'building',
           lat: '49.4494600',

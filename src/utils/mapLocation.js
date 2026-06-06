@@ -26,7 +26,18 @@ const CITY_TYPES = new Set(['city', 'town', 'village', 'municipality']);
 const EXACT_TYPES = new Set(['house', 'building', 'residential', 'apartments']);
 const STREET_TYPES = new Set(['road', 'street']);
 const ROAD_ADDRESS_KEYS = ['road', 'pedestrian', 'footway', 'path', 'cycleway'];
-const COMPONENT_STOPWORDS = new Set(['am', 'an', 'der', 'die', 'das', 'den', 'dem', 'des', 'im', 'in']);
+const COMPONENT_STOPWORDS = new Set([
+  'am',
+  'an',
+  'der',
+  'die',
+  'das',
+  'den',
+  'dem',
+  'des',
+  'im',
+  'in',
+]);
 
 function unique(values) {
   return [...new Set(values.filter(Boolean))];
@@ -155,7 +166,8 @@ function queryIntent(query) {
     hasHouseNumber: hasHouseNumberInFirstPart,
     hasRealHouseNumber: hasHouseNumberInFirstPart,
     isRegional:
-      !hasHouseNumberInFirstPart && (Boolean(postcode) || cleaned.includes('/') || cleaned.includes(',')),
+      !hasHouseNumberInFirstPart &&
+      (Boolean(postcode) || cleaned.includes('/') || cleaned.includes(',')),
   };
 }
 
@@ -177,7 +189,8 @@ function precisionForResult(row, intent) {
   if (matchesRoad && matchesHouseNumber && EXACT_TYPES.has(type)) return 'exact';
   if (matchesRoad && (STREET_TYPES.has(type) || EXACT_TYPES.has(type))) return 'street';
   if (intent.hasHouseNumber) return null;
-  if (REGIONAL_TYPES.has(type)) return type === 'postcode' || type === 'postal_code' ? 'postcode' : 'district';
+  if (REGIONAL_TYPES.has(type))
+    return type === 'postcode' || type === 'postal_code' ? 'postcode' : 'district';
   if (CITY_TYPES.has(type)) return 'city';
   return null;
 }
@@ -208,16 +221,24 @@ function precisionUsesArea(precision) {
 }
 
 function precisionRank(precision) {
-  return {
-    exact: 50,
-    street: 40,
-    district: 30,
-    postcode: 25,
-    city: 10,
-  }[precision] ?? 0;
+  return (
+    {
+      exact: 50,
+      street: 40,
+      district: 30,
+      postcode: 25,
+      city: 10,
+    }[precision] ?? 0
+  );
 }
 
-export function mapLocationFromCoordinates({ lat, lon, address = null, label = null, source = 'provider' }) {
+export function mapLocationFromCoordinates({
+  lat,
+  lon,
+  address = null,
+  label = null,
+  source = 'provider',
+}) {
   const parsedLat = validCoordinate(lat);
   const parsedLon = validCoordinate(lon);
   if (
@@ -233,7 +254,8 @@ export function mapLocationFromCoordinates({ lat, lon, address = null, label = n
 
   const cleanedAddress = cleanMapAddress(address);
   const approximate =
-    !queryIntent(cleanedAddress).hasRealHouseNumber || /(?:^|[\s,])0(?:[\s,]|$)/.test(cleanedAddress);
+    !queryIntent(cleanedAddress).hasRealHouseNumber ||
+    /(?:^|[\s,])0(?:[\s,]|$)/.test(cleanedAddress);
 
   return {
     status: 'ok',

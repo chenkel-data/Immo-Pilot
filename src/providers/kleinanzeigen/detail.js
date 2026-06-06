@@ -138,7 +138,9 @@ function extractFeatures(html) {
 function extractImages(html) {
   const urls = new Set();
 
-  for (const match of html.matchAll(/<script type="application\/ld\+json">\s*({[\s\S]*?})\s*<\/script>/gi)) {
+  for (const match of html.matchAll(
+    /<script type="application\/ld\+json">\s*({[\s\S]*?})\s*<\/script>/gi,
+  )) {
     try {
       const parsed = JSON.parse(decodeHtml(match[1]));
       if (parsed?.['@type'] === 'ImageObject' && parsed.contentUrl) urls.add(parsed.contentUrl);
@@ -148,7 +150,9 @@ function extractImages(html) {
   }
 
   for (const match of html.matchAll(/data-imgsrc="([^"]+)"/g)) urls.add(decodeHtml(match[1]));
-  for (const match of html.matchAll(/https:\/\/img\.kleinanzeigen\.de\/api\/v1\/prod-ads\/images\/[^"'\s<]+/g)) {
+  for (const match of html.matchAll(
+    /https:\/\/img\.kleinanzeigen\.de\/api\/v1\/prod-ads\/images\/[^"'\s<]+/g,
+  )) {
     urls.add(decodeHtml(match[0]));
   }
 
@@ -223,7 +227,10 @@ function extractPhoneNumbers(html) {
   return [];
 }
 
-export function parseKleinanzeigenDetailHtml(html, { listingId = null, adId = null, url = null } = {}) {
+export function parseKleinanzeigenDetailHtml(
+  html,
+  { listingId = null, adId = null, url = null } = {},
+) {
   const attrs = extractAttributes(html);
   const features = extractFeatures(html);
   const description = extractFirstBlock(
@@ -282,7 +289,8 @@ export function parseKleinanzeigenDetailHtml(html, { listingId = null, adId = nu
       yesNoFeature(features, /einbauküche|küche/i) ??
       yesNoFeature(features, /kühlschrank|kuehlschrank|backofen|herd|spülmaschine|spuelmaschine/i),
     has_cellar: yesNoFeature(features, /keller/i),
-    has_balcony: yesNoFeature(features, /balkon/i) ?? (/balkon/i.test(description ?? '') ? 1 : null),
+    has_balcony:
+      yesNoFeature(features, /balkon/i) ?? (/balkon/i.test(description ?? '') ? 1 : null),
     has_garden: yesNoFeature(features, /garten/i),
     has_lift: yesNoFeature(features, /aufzug|lift/i),
     barrier_free: yesNoFeature(features, /stufenlos|barriere/i),
@@ -296,7 +304,10 @@ export function parseKleinanzeigenDetailHtml(html, { listingId = null, adId = nu
     location_description: null,
     address_line1:
       extractFirst(html, /<span[^>]*id="viewad-locality"[^>]*>([\s\S]*?)<\/span>/i) ??
-      extractFirst(html, /<div[^>]*class="[^"]*map--address[^"]*"[\s\S]*?<span[^>]*>([\s\S]*?)<\/span>/i),
+      extractFirst(
+        html,
+        /<div[^>]*class="[^"]*map--address[^"]*"[\s\S]*?<span[^>]*>([\s\S]*?)<\/span>/i,
+      ),
     address_line2: null,
     lat,
     lon,

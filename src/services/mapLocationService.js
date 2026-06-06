@@ -65,7 +65,10 @@ async function resolveAddressLocation(address) {
   for (const query of mapAddressCandidates(address)) {
     const cached = getCachedMapLocation(query);
     if (cached?.status === 'ok') return cached;
-    if (cached?.status === 'miss' && (cached.source === MISS_CACHE_SOURCE || addressLooksRegional(query))) {
+    if (
+      cached?.status === 'miss' &&
+      (cached.source === MISS_CACHE_SOURCE || addressLooksRegional(query))
+    ) {
       continue;
     }
 
