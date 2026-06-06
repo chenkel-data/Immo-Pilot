@@ -59,6 +59,7 @@ export const api = {
     toggleFav: (id) => api.patch(`/api/listings/${id}/favorite`),
     getImages: (id) => api.get(`/api/listings/${id}/images`),
     getDetails: (id) => api.get(`/api/listings/${id}/details`),
+    getMapLocation: (id) => api.get(`/api/listings/${id}/map-location`),
     refreshDetails: (id) => api.post(`/api/listings/${id}/details/refresh`),
     batchImages: (ids) => api.post('/api/listings/batch-images', { ids }),
     getRuns: () => api.get('/api/listings/runs'),

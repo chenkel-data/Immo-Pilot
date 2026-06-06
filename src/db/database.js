@@ -30,6 +30,8 @@ db.exec(`
     size        TEXT,
     rooms       TEXT,
     address     TEXT,
+    lat         REAL,
+    lon         REAL,
     description TEXT,
     publisher   TEXT,
     link        TEXT NOT NULL,
@@ -122,6 +124,19 @@ db.exec(`
     raw_detail_json       TEXT,
     FOREIGN KEY (listing_id) REFERENCES listings(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS map_location_cache (
+    query            TEXT PRIMARY KEY,
+    fetched_at       TEXT NOT NULL,
+    status           TEXT NOT NULL DEFAULT 'ok',
+    source           TEXT,
+    label            TEXT,
+    precision        TEXT,
+    lat              REAL,
+    lon              REAL,
+    bbox_json        TEXT,
+    geometry_geojson TEXT
+  );
 `);
 
 // ── Migrations for existing DBs ───────────────────────────────────────────
@@ -137,6 +152,8 @@ safeAlter('ALTER TABLE listings ADD COLUMN rooms TEXT');
 safeAlter('ALTER TABLE listings ADD COLUMN publisher TEXT');
 safeAlter('ALTER TABLE listings ADD COLUMN listed_at TEXT');
 safeAlter('ALTER TABLE listings ADD COLUMN images TEXT');
+safeAlter('ALTER TABLE listings ADD COLUMN lat REAL');
+safeAlter('ALTER TABLE listings ADD COLUMN lon REAL');
 safeAlter("ALTER TABLE listings ADD COLUMN provider TEXT DEFAULT 'kleinanzeigen'");
 safeAlter("ALTER TABLE listings ADD COLUMN listing_type TEXT DEFAULT 'miete'");
 safeAlter('ALTER TABLE listings ADD COLUMN search_config_id INTEGER');
@@ -172,6 +189,9 @@ db.exec('CREATE INDEX IF NOT EXISTS idx_listing_agents_config ON listing_agents(
 
 // Index for ordering or inspecting detail fetch timestamps
 db.exec('CREATE INDEX IF NOT EXISTS idx_listing_details_fetched ON listing_details(fetched_at)');
+
+// Cache lookup for address/district geocoding
+db.exec('CREATE INDEX IF NOT EXISTS idx_map_location_cache_status ON map_location_cache(status)');
 
 // Migration: populate listing_agents from existing search_config_id values
 {
@@ -398,13 +418,15 @@ export function upsertListing(l) {
 
   db.prepare(
     `
-    INSERT INTO listings (id, source, provider, listing_type, title, price, size, rooms, address, description, publisher, link, image, is_blacklisted, listed_at, available_from, first_seen, last_seen, scrape_rank)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO listings (id, source, provider, listing_type, title, price, size, rooms, address, lat, lon, description, publisher, link, image, is_blacklisted, listed_at, available_from, first_seen, last_seen, scrape_rank)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       price           = excluded.price,
       size            = excluded.size,
       rooms           = COALESCE(excluded.rooms, rooms),
       address         = excluded.address,
+      lat             = COALESCE(excluded.lat, lat),
+      lon             = COALESCE(excluded.lon, lon),
       description     = excluded.description,
       publisher       = COALESCE(excluded.publisher, publisher),
       image           = excluded.image,
@@ -423,6 +445,8 @@ export function upsertListing(l) {
     l.size ?? null,
     l.rooms ?? null,
     l.address ?? null,
+    l.lat ?? null,
+    l.lon ?? null,
     l.description ?? null,
     l.publisher ?? null,
     l.link,
@@ -728,6 +752,59 @@ export function markListingDetailError({
 export function getListingDetailById(listingId) {
   const row = db.prepare('SELECT * FROM listing_details WHERE listing_id = ?').get(listingId);
   return normalizeDetailRow(row);
+}
+
+function normalizeMapLocationRow(row) {
+  if (!row) return null;
+  return {
+    status: row.status,
+    source: row.source,
+    query: row.query,
+    label: row.label,
+    precision: row.precision,
+    lat: row.lat,
+    lon: row.lon,
+    bbox: jsonValue(row.bbox_json, null),
+    geometry_geojson: jsonValue(row.geometry_geojson, null),
+    fetched_at: row.fetched_at,
+  };
+}
+
+export function getCachedMapLocation(query) {
+  const row = db.prepare('SELECT * FROM map_location_cache WHERE query = ?').get(query);
+  return normalizeMapLocationRow(row);
+}
+
+export function upsertMapLocationCache(location) {
+  db.prepare(
+    `
+    INSERT INTO map_location_cache (
+      query, fetched_at, status, source, label, precision, lat, lon, bbox_json, geometry_geojson
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(query) DO UPDATE SET
+      fetched_at       = excluded.fetched_at,
+      status           = excluded.status,
+      source           = excluded.source,
+      label            = excluded.label,
+      precision        = excluded.precision,
+      lat              = excluded.lat,
+      lon              = excluded.lon,
+      bbox_json        = excluded.bbox_json,
+      geometry_geojson = excluded.geometry_geojson
+  `,
+  ).run(
+    location.query,
+    location.fetched_at ?? new Date().toISOString(),
+    location.status ?? 'ok',
+    location.source ?? null,
+    location.label ?? null,
+    location.precision ?? null,
+    location.lat ?? null,
+    location.lon ?? null,
+    jsonString(location.bbox ?? null),
+    jsonString(location.geometry_geojson ?? null),
+  );
 }
 
 export function resetAll() {

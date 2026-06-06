@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api.js';
 import { formatAvailableFrom } from '../utils/formatting.js';
+import ListingMap from './ListingMap.jsx';
 
 function Field({ label, value }) {
   if (value === null || value === undefined || value === '') return null;
@@ -56,14 +57,49 @@ function visibleAttributeGroups(detail) {
     .filter((group) => group.attributes.length > 0);
 }
 
+function mapLinks(location) {
+  if (!location) return null;
+  const lat = Number(location.lat);
+  const lon = Number(location.lon);
+  if (Number.isFinite(lat) && Number.isFinite(lon)) {
+    const marker = `${lat.toFixed(6)},${lon.toFixed(6)}`;
+    return {
+      osmUrl: `https://www.openstreetmap.org/?mlat=${lat.toFixed(6)}&mlon=${lon.toFixed(6)}#map=15/${lat.toFixed(6)}/${lon.toFixed(6)}`,
+      googleUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(marker)}`,
+    };
+  }
+
+  const query = location.query || location.label;
+  if (!query) return null;
+  const encodedQuery = encodeURIComponent(query);
+  return {
+    osmUrl: `https://www.openstreetmap.org/search?query=${encodedQuery}`,
+    googleUrl: `https://www.google.com/maps/search/?api=1&query=${encodedQuery}`,
+  };
+}
+
+function mapPrecisionLabel(precision) {
+  return {
+    exact: 'Exakte Lage',
+    street: 'Ungefähre Lage',
+    postcode: 'PLZ-Gebiet',
+    district: 'Stadtteil',
+    city: 'Stadtgebiet',
+  }[precision] ?? 'Kartenlage';
+}
+
 export default function ListingDetailDrawer({ listing, open, onClose, showToast }) {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [payload, setPayload] = useState(null);
+  const [mapLocation, setMapLocation] = useState(null);
+  const [mapLoading, setMapLoading] = useState(false);
+  const [mapError, setMapError] = useState('');
   const [error, setError] = useState('');
 
   const detail = payload?.detail ?? null;
   const currentListing = payload?.listing ?? listing;
+  const links = mapLinks(mapLocation);
   const detailError = payload?.detail_error ?? null;
   const detailSize = findAttribute(detail, /wohnfläche|wohnflaeche|gesamtfläche/i);
   const detailRooms = findAttribute(detail, /^zimmer$/i);
@@ -75,6 +111,9 @@ export default function ListingDetailDrawer({ listing, open, onClose, showToast 
     setLoading(true);
     setError('');
     setPayload(null);
+    setMapLocation(null);
+    setMapError('');
+    setMapLoading(false);
 
     api.listings
       .getDetails(listing.id)
@@ -93,6 +132,30 @@ export default function ListingDetailDrawer({ listing, open, onClose, showToast 
     };
   }, [open, listing?.id]);
 
+  useEffect(() => {
+    if (!open || !listing?.id || !payload) return;
+    let cancelled = false;
+    setMapLoading(true);
+    setMapError('');
+    setMapLocation(null);
+
+    api.listings
+      .getMapLocation(listing.id)
+      .then((data) => {
+        if (!cancelled) setMapLocation(data.map_location ?? null);
+      })
+      .catch((err) => {
+        if (!cancelled) setMapError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setMapLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, listing?.id, payload]);
+
   const images = useMemo(() => {
     if (Array.isArray(detail?.images) && detail.images.length > 0) return detail.images;
     try {
@@ -107,6 +170,8 @@ export default function ListingDetailDrawer({ listing, open, onClose, showToast 
   const handleRefresh = async () => {
     setRefreshing(true);
     setError('');
+    setMapLocation(null);
+    setMapError('');
     try {
       const data = await api.listings.refreshDetails(listing.id);
       setPayload(data);
@@ -232,6 +297,44 @@ export default function ListingDetailDrawer({ listing, open, onClose, showToast 
                 ) : null}
               </p>
             </section>
+
+            {(mapLoading || mapError || mapLocation) && (
+              <section className="detail-section">
+                <h3>Karte</h3>
+                {mapLoading && <p className="detail-map-status">Karte wird geladen…</p>}
+                {mapError && <p className="detail-map-status detail-map-status--error">{mapError}</p>}
+                {mapLocation && (
+                  <div className="detail-map">
+                    <ListingMap location={mapLocation} />
+                    <div className="detail-map-footer">
+                      <span className="detail-map-label" title={mapLocation.label}>
+                        {mapPrecisionLabel(mapLocation.precision)}: {mapLocation.label}
+                      </span>
+                      {links && (
+                        <div className="detail-map-actions">
+                          <a
+                            className="btn btn--ghost btn--sm"
+                            href={links.osmUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            OpenStreetMap
+                          </a>
+                          <a
+                            className="btn btn--ghost btn--sm"
+                            href={links.googleUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Google Maps
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
 
             <section className="detail-section">
               <h3>Kontakt</h3>

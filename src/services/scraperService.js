@@ -99,6 +99,8 @@ export async function runScrapeForConfig(searchConfig, hooks = {}) {
         size: listing.size ?? null,
         rooms: listing.rooms ?? null,
         address: listing.address ?? null,
+        lat: listing.lat ?? null,
+        lon: listing.lon ?? null,
         description: listing.description ?? null,
         publisher: listing.publisher ?? null,
         link: listing.link,

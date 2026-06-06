@@ -73,6 +73,7 @@ export default function App() {
     loadStats,
     loadConfigStats,
     handleSeen,
+    handleMarkSeen,
     handleFavorite,
     handleBlacklist,
     handleUnblacklist,
@@ -215,6 +216,19 @@ export default function App() {
     setPublisherFilter('');
     setMaxAvailableFrom('');
   }, [loadListings]);
+
+  const handleOpenDetails = useCallback(
+    (listing) => {
+      if (!listing) return;
+      setDetailListing({ ...listing, is_seen: 1 });
+      if (!listing.is_seen) {
+        handleMarkSeen(listing.id).catch((err) => {
+          showToast?.(`Konnte nicht als gesehen markieren: ${err.message}`, 'error');
+        });
+      }
+    },
+    [handleMarkSeen, showToast],
+  );
 
   const isProviderFilterActive = !activeConfigId && activeTab === TABS.ALL;
 
@@ -589,7 +603,7 @@ export default function App() {
               onFavorite={handleFavorite}
               onBlacklist={handleBlacklist}
               onUnblacklist={handleUnblacklist}
-              onDetails={setDetailListing}
+              onDetails={handleOpenDetails}
               onScrape={handleHeaderScrape}
               canScrape={canScrape}
               allFiltered={filtered}

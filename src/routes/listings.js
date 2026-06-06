@@ -35,6 +35,7 @@ import {
   fetchAndParseKleinanzeigenDetail,
   getAdIdFromUrl,
 } from '../providers/kleinanzeigen/detail.js';
+import { resolveListingMapLocation } from '../services/mapLocationService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = path.join(__dirname, '..', '..', 'config', 'default.json');
@@ -388,6 +389,19 @@ router.get(
   }),
 );
 
+// GET /api/listings/:id/map-location
+router.get(
+  '/:id/map-location',
+  asyncHandler(async (req, res) => {
+    const listing = getListingById(req.params.id);
+    if (!listing) return res.status(404).json({ error: 'Listing not found' });
+
+    const detail = getListingDetailById(listing.id);
+    const mapLocation = await resolveListingMapLocation(listing, detail);
+    res.json({ map_location: mapLocation });
+  }),
+);
+
 // POST /api/listings/:id/details/refresh
 router.post(
   '/:id/details/refresh',
@@ -395,7 +409,11 @@ router.post(
     const listing = getListingById(req.params.id);
     if (!listing) return res.status(404).json({ error: 'Listing not found' });
     const detail = await refreshListingDetail(listing);
-    res.json({ listing: getListingById(listing.id), detail: serializeDetail(detail) });
+    const updatedListing = getListingById(listing.id);
+    res.json({
+      listing: updatedListing,
+      detail: serializeDetail(detail),
+    });
   }),
 );
 
