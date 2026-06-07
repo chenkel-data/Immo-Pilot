@@ -23,6 +23,8 @@ import {
   LISTING_TYPE_COLORS,
   PROVIDER_COLORS,
   PROVIDER_LABELS,
+  getListingTypeFilterIds,
+  normalizeListingTypeFilter,
 } from './constants.js';
 
 const FILTERS_STORAGE_KEY = 'immo.filters.v1';
@@ -127,7 +129,9 @@ export default function App() {
   const [detailListing, setDetailListing] = useState(null);
   const [page, setPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState(persistedFilters.searchQuery);
-  const [listingTypeFilter, setListingTypeFilter] = useState(persistedFilters.listingTypeFilter);
+  const [listingTypeFilter, setListingTypeFilter] = useState(
+    normalizeListingTypeFilter(persistedFilters.listingTypeFilter),
+  );
   const [providerFilter, setProviderFilter] = useState(persistedFilters.providerFilter);
   const [publisherFilter, setPublisherFilter] = useState(persistedFilters.publisherFilter);
   const [minPrice, setMinPrice] = useState(persistedFilters.minPrice);
@@ -230,14 +234,20 @@ export default function App() {
     [handleMarkSeen, showToast],
   );
 
-  const isProviderFilterActive = !activeConfigId && activeTab === TABS.ALL;
+  const isProviderFilterActive = !activeConfigId;
+  const listingTypeFilterIds = useMemo(
+    () => getListingTypeFilterIds(listingTypeFilter),
+    [listingTypeFilter],
+  );
+  const isListingTypeFilterActive = !activeConfigId && listingTypeFilterIds.length > 0;
 
   const uiFilteredListings = useMemo(() => {
     let list = [...listings];
     const q = searchQuery.toLowerCase();
     const keywords = scrapeConfig.blacklistKeywords ?? [];
 
-    if (listingTypeFilter) list = list.filter((l) => l.listing_type === listingTypeFilter);
+    if (isListingTypeFilterActive)
+      list = list.filter((l) => listingTypeFilterIds.includes(l.listing_type));
     if (q)
       list = list.filter(
         (l) =>
@@ -275,7 +285,8 @@ export default function App() {
     return list;
   }, [
     listings,
-    listingTypeFilter,
+    isListingTypeFilterActive,
+    listingTypeFilterIds,
     publisherFilter,
     searchQuery,
     minPrice,
@@ -315,7 +326,8 @@ export default function App() {
 
   const tabCounts = useMemo(() => {
     let base = listings;
-    if (listingTypeFilter) base = base.filter((l) => l.listing_type === listingTypeFilter);
+    if (isListingTypeFilterActive)
+      base = base.filter((l) => listingTypeFilterIds.includes(l.listing_type));
     if (isProviderFilterActive && providerFilter)
       base = base.filter((l) => l.provider === providerFilter);
     const nonBlacklisted = base.filter((l) => !l.is_blacklisted);
@@ -325,7 +337,13 @@ export default function App() {
       [TABS.FAVORITES]: nonBlacklisted.filter((l) => l.is_favorite).length,
       [TABS.BLACKLISTED]: base.filter((l) => l.is_blacklisted).length,
     };
-  }, [listings, listingTypeFilter, isProviderFilterActive, providerFilter]);
+  }, [
+    listings,
+    isListingTypeFilterActive,
+    listingTypeFilterIds,
+    isProviderFilterActive,
+    providerFilter,
+  ]);
 
   const activeConfigStats = useMemo(
     () => ({

@@ -11,15 +11,64 @@ export const TABS = {
 
 export const LISTING_TYPE_LABELS = {
   // Kleinanzeigen
-  'miete':                   'Mietwohnungen',
+  'miete':                   'Mietwohnung',
   'wohnen-auf-zeit':         'Wohnen auf Zeit',
   // ImmobilienScout24
-  'apartmentrent':           'Wohnung mieten',
+  'apartmentrent':           'Mietwohnung',
   'apartmentbuy':            'Wohnung kaufen',
   'houserent':               'Haus mieten',
   'housebuy':                'Haus kaufen',
   'shorttermaccommodation':  'Wohnen auf Zeit',
 };
+
+export const LISTING_TYPE_FILTERS = [
+  {
+    id: 'apartment-rent',
+    label: 'Mietwohnung',
+    listingTypeIds: ['miete', 'apartmentrent'],
+  },
+  {
+    id: 'short-term',
+    label: 'Wohnen auf Zeit',
+    listingTypeIds: ['wohnen-auf-zeit', 'shorttermaccommodation'],
+  },
+  {
+    id: 'apartment-buy',
+    label: 'Wohnung kaufen',
+    listingTypeIds: ['apartmentbuy'],
+  },
+  {
+    id: 'house-rent',
+    label: 'Haus mieten',
+    listingTypeIds: ['houserent'],
+  },
+  {
+    id: 'house-buy',
+    label: 'Haus kaufen',
+    listingTypeIds: ['housebuy'],
+  },
+];
+
+export const LISTING_TYPE_IDS_BY_FILTER = Object.fromEntries(
+  LISTING_TYPE_FILTERS.map((filter) => [filter.id, filter.listingTypeIds]),
+);
+
+export const LISTING_TYPE_FILTER_BY_LISTING_TYPE = Object.fromEntries(
+  LISTING_TYPE_FILTERS.flatMap((filter) =>
+    filter.listingTypeIds.map((listingTypeId) => [listingTypeId, filter.id]),
+  ),
+);
+
+export function getListingTypeFilterIds(filterId) {
+  if (!filterId) return [];
+  return LISTING_TYPE_IDS_BY_FILTER[filterId] ?? [filterId];
+}
+
+export function normalizeListingTypeFilter(filterId) {
+  if (!filterId) return '';
+  if (LISTING_TYPE_IDS_BY_FILTER[filterId]) return filterId;
+  return LISTING_TYPE_FILTER_BY_LISTING_TYPE[filterId] ?? filterId;
+}
 
 export const LISTING_TYPE_COLORS = {
   // Apartment rent → Sky
@@ -45,5 +94,3 @@ export const PROVIDER_COLORS = {
   'kleinanzeigen': { bg: '#f0fdf4', text: '#166534', border: '#86efac' },
   'immoscout24':   { bg: '#eff6ff', text: '#1d4ed8', border: '#93c5fd' },
 };
-
-
