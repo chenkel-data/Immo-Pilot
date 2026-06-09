@@ -1,4 +1,4 @@
-import { TABS, LISTING_TYPE_LABELS, PROVIDER_LABELS } from '../constants.js';
+import { TABS, LISTING_TYPE_FILTERS, PROVIDER_LABELS } from '../constants.js';
 
 export default function FilterBar({
   activeTab, stats, listingTypeFilter,
@@ -32,7 +32,7 @@ export default function FilterBar({
 
   const typeOptions = [
     { id: '', label: 'Alle Typen' },
-    ...Object.entries(LISTING_TYPE_LABELS).map(([id, label]) => ({ id, label })),
+    ...LISTING_TYPE_FILTERS.map(({ id, label }) => ({ id, label })),
   ];
 
   return (
